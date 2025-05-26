@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# This script will output the content of the README.md for the
-# Agave Validator Upgrade, Rollback, and Clean Script.
-
-cat <<'EOF'
 # Agave Validator Upgrade, Rollback, and Clean Script (`start_upgrade-agave.sh`)
 
 This script automates the process of upgrading, rolling back, or cleaning old compiled versions of the Agave validator client (including Jito, vanilla Agave, and Xandeum-Agave variants). It handles fetching specified versions from Git repositories, building the binaries, managing compiled versions, and updating a symbolic link to the active version.
