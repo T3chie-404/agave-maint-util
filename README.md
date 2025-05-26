@@ -1,4 +1,9 @@
-# agave-maint-util
+#!/bin/bash
+
+# This script will output the content of the README.md for the
+# Agave Validator Upgrade, Rollback, and Clean Script.
+
+cat <<'EOF'
 # Agave Validator Upgrade, Rollback, and Clean Script (`start_upgrade-agave.sh`)
 
 This script automates the process of upgrading, rolling back, or cleaning old compiled versions of the Agave validator client (including Jito, vanilla Agave, and Xandeum-Agave variants). It handles fetching specified versions from Git repositories, building the binaries, managing compiled versions, and updating a symbolic link to the active version.
@@ -80,5 +85,58 @@ Make the script executable: `chmod +x start_upgrade-agave.sh`
 
 ### 1. Upgrade to a New Version
 
-```bash
+\`\`\`bash
 ./start_upgrade-agave.sh <version_tag> [-j <number_of_jobs>]
+\`\`\`
+
+* `<version_tag>`: The Git tag of the version you want to build and install.
+    * If the tag ends with `-jito` (e.g., `v2.2.14-jito`), the script will build from `JITO_SOURCE_DIR`.
+    * If the tag starts with `x` (e.g., `x2.2.0-munich`) and does not end with `-jito`, it will prompt to confirm building the Xandeum-Agave client from `XANDEUM_SOURCE_DIR`.
+    * For other tags (not ending in `-jito`, not starting with `x`), it will prompt to confirm building the vanilla Agave client from `VANILLA_SOURCE_DIR`.
+* `-j <number_of_jobs>` (Optional): Specifies the number of parallel jobs for `cargo build` by setting the `CARGO_BUILD_JOBS` environment variable.
+
+**Examples:**
+\`\`\`bash
+./start_upgrade-agave.sh v2.2.14-jito
+./start_upgrade-agave.sh v2.2.14-jito -j 32
+./start_upgrade-agave.sh x2.2.0-munich # Will prompt for Xandeum confirmation
+./start_upgrade-agave.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
+\`\`\`
+
+### 2. Rollback to a Previously Compiled Version
+
+\`\`\`bash
+./start_upgrade-agave.sh rollback
+\`\`\`
+This command will:
+1.  List previously compiled versions.
+2.  Prompt for selection via a numbered menu.
+3.  Update the `active_release` symlink.
+4.  Prompt before initiating a validator restart.
+
+### 3. Clean Old Compiled Versions
+
+\`\`\`bash
+./start_upgrade-agave.sh clean
+\`\`\`
+This command will:
+1.  List deletable compiled versions with numbers (active version is excluded).
+2.  Prompt for selection of multiple versions by number.
+3.  Show estimated space to be freed and ask for final confirmation.
+4.  Permanently delete selected version directories.
+
+## Script Workflow (Simplified)
+
+* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
+* **Rollback:** Lists versions, prompts for selection, updates symlink, verifies, prompts for restart.
+* **Clean:** Lists deletable versions, prompts for numbered selection, confirms, deletes.
+
+## Important Notes
+
+* **Run as Correct User:** Ensure this script is run by the user intended to own the source code and compiled binaries (e.g., `solval`). This user will also need `sudo` privileges for creating the source directory if it doesn't exist.
+* **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc`, typically handled by a separate system tuning script).
+* **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
+* **Error Handling:** Uses `set -euo pipefail`.
+* **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. A fallback to `cargo build --release` is provided with a warning if the script is not found.
+* **Irreversible Deletion:** The `clean` command uses `rm -rf`. Double-check selections before confirming deletion as this action is permanent.
+EOF
