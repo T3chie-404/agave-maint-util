@@ -46,6 +46,13 @@ REPO_URL_TO_CLONE="" # Will be set dynamically
 
 COMPILED_BASE_DIR="$HOME/data/compiled" # Base directory for compiled versions
 ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release" # Symlink to the active version's bin directory
+# IMPORTANT: If you change COMPILED_BASE_DIR (and thus ACTIVE_RELEASE_SYMLINK),
+#            ensure your systemd service file (e.g., /etc/systemd/system/validator.service)
+#            points to the correct path for the agave-validator binary,
+#            either directly or by having ACTIVE_RELEASE_SYMLINK in its PATH.
+#            Also, ensure your user's ~/.bashrc (configured by the system tuning script)
+#            points to this ACTIVE_RELEASE_SYMLINK for interactive use.
+
 LEDGER_DIR="$HOME/ledger" # Path to the ledger
 BUILD_JOBS=2 # Default number of parallel jobs for cargo build
 VALIDATOR_BINARY_NAME="agave-validator" # Name of the validator binary
@@ -178,7 +185,7 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 5 --monitor
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -403,20 +410,23 @@ export RUSTFLAGS="-O -C target-cpu=native"
 # Handle SOURCE_DIR creation and cloning
 if [ ! -d "${SOURCE_DIR}" ]; then
     echo -e "${YELLOW}Source directory ${SOURCE_DIR} does not exist.${NC}"
-    PARENT_OF_SOURCE_DIR=$(dirname "${SOURCE_DIR}")
+    # PARENT_OF_SOURCE_DIR=$(dirname "${SOURCE_DIR}") # Not strictly needed if mkdir -p is used carefully
 
-    if [ ! -d "${PARENT_OF_SOURCE_DIR}" ]; then
-        echo -e "${RED}ERROR: Parent directory ${PARENT_OF_SOURCE_DIR} for the source code does not exist.${NC}"
-        echo -e "${RED}Please create it and ensure user $(whoami) has write permissions, or run this script with a user that does.${NC}"
-        exit 1
-    fi
-    
     echo -e "${CYAN}Attempting to create ${SOURCE_DIR} with sudo and set ownership to $(whoami)...${NC}"
-    if sudo mkdir -p "${SOURCE_DIR}" && sudo chown "$(whoami)":"$(id -gn)" "${SOURCE_DIR}"; then
-        echo -e "${GREEN}Directory ${SOURCE_DIR} created and ownership set to $(whoami).${NC}"
+    # Create the target directory itself, mkdir -p will create parents if they don't exist.
+    # If parent creation fails due to permissions (e.g. /mnt is not writable by root), mkdir will fail.
+    if sudo mkdir -p "${SOURCE_DIR}"; then
+        echo -e "${GREEN}Directory structure ${SOURCE_DIR} ensured/created.${NC}"
+        if sudo chown "$(whoami)":"$(id -gn)" "${SOURCE_DIR}"; then
+            echo -e "${GREEN}Ownership of ${SOURCE_DIR} set to $(whoami).${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to set ownership for ${SOURCE_DIR} to $(whoami).${NC}"
+            echo -e "${YELLOW}Please check sudo permissions or manually ensure $(whoami) owns ${SOURCE_DIR}.${NC}"
+            exit 1
+        fi
     else
-        echo -e "${RED}ERROR: Failed to create or set ownership for ${SOURCE_DIR} using sudo.${NC}"
-        echo -e "${YELLOW}Please ensure user $(whoami) can use sudo for these operations, or manually create ${SOURCE_DIR} and grant ownership to $(whoami).${NC}"
+        echo -e "${RED}ERROR: Failed to create directory ${SOURCE_DIR} using sudo.${NC}"
+        echo -e "${YELLOW}Please check permissions for parent directories and sudo capabilities.${NC}"
         exit 1
     fi
 
