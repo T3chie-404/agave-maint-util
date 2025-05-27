@@ -12,7 +12,7 @@ The primary goal of this script is to automate common setup tasks, including:
 - Configuration of system-wide (`systemd`) and user-session (`security/limits`) open file descriptor limits.
 - Setup of log rotation for the validator's log file.
 
-**This script should typically be run once on a new server by the user who will be managing/running the validator (e.g., `solval`), and this user must have `sudo` privileges for system-wide changes.**
+**This script should typically be run once on a new server by the user who will be managing/running the validator (e.g., `sol`), and this user must have `sudo` privileges for system-wide changes.**
 
 ## Features
 
@@ -56,7 +56,7 @@ The script will prompt you at the beginning to confirm or change the following d
 - **`CONFIGURABLE_VALIDATOR_LOG_FILE_PATH`**: Location for the main validator log, used by logrotate.
   *(Default: `$HOME/data/logs/solana-validator.log`)*
 - **`CONFIGURABLE_VALIDATOR_LOG_DIR_USER`**: The user that will own the validator log directory.
-  *(Default: `sol` - **Change this to your validator user, e.g., `solval`**)*
+  *(Default: `sol` - **Change this to your validator user, e.g., `sol`**)*
 - **`CONFIGURABLE_VALIDATOR_SERVICE_NAME`**: The systemd service name of your validator.
   *(Default: `validator.service`)*
 
@@ -67,17 +67,17 @@ Other internal defaults that can be modified by editing the script:
 
 ## Usage
 
-1.  Save the script to a file (e.g., `system_tuning_setup.sh`).
-2.  Make it executable: `chmod +x system_tuning_setup.sh`.
-3.  **Run it as the user who will manage the validator and whose `~/.bashrc` should be configured (e.g., `solval`). This user needs `sudo` privileges.**
+1.  Save the script to a file (e.g., `system_tuner.sh`).
+2.  Make it executable: `chmod +x system_tuner.sh`.
+3.  **Run it as the user who will manage the validator and whose `~/.bashrc` should be configured (e.g., `sol`). This user needs `sudo` privileges.**
     ```bash
-    ./system_tuning_setup.sh
+    ./system_tuner.sh
     ```
-    If you are logged in as root and want to set it up for `solval`, you might run:
+    If you are logged in as root and want to set it up for `sol`, you might run:
     ```bash
-    sudo -u solval ./system_tuning_setup.sh
+    sudo -u sol ./system_tuner.sh
     ```
-    (Ensure `solval` has the necessary sudo rights for the `sudo` commands *within* the script).
+    (Ensure `sol` has the necessary sudo rights for the `sudo` commands *within* the script).
 
 4.  Follow the interactive prompts to confirm path configurations and each major section of changes.
 
