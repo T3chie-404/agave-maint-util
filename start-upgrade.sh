@@ -185,7 +185,7 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 5 --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -617,7 +617,7 @@ echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
 echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit ...${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
+"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 5 --monitor
 
 echo -e "${GREEN}\nExit command sent. Validator should restart with the new version if managed by a service (e.g., systemd).${NC}"
 echo -e "${GREEN}UPGRADE DONE${NC}"
