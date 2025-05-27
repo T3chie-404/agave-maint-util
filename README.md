@@ -1,4 +1,4 @@
-# Agave Validator Upgrade, Rollback, and Clean Script (`start_upgrade-agave.sh`)
+# Agave Validator Upgrade, Rollback, and Clean Script (`start-upgrade.sh`)
 
 This script automates the process of upgrading, rolling back, or cleaning old compiled versions of the Agave validator client (including Jito, vanilla Agave, and Xandeum-Agave variants). It handles fetching specified versions from Git repositories, building the binaries, managing compiled versions, and updating a symbolic link to the active version.
 
@@ -75,12 +75,12 @@ The following variables are defined at the top of the script and can be customiz
 
 ## Usage
 
-Make the script executable: `chmod +x start_upgrade-agave.sh`
+Make the script executable: `chmod +x start-upgrade.sh`
 
 ### 1. Upgrade to a New Version
 
 \`\`\`bash
-./start_upgrade-agave.sh <version_tag> [-j <number_of_jobs>]
+./start-upgrade.sh <version_tag> [-j <number_of_jobs>]
 \`\`\`
 
 * `<version_tag>`: The Git tag of the version you want to build and install.
@@ -91,16 +91,16 @@ Make the script executable: `chmod +x start_upgrade-agave.sh`
 
 **Examples:**
 \`\`\`bash
-./start_upgrade-agave.sh v2.2.14-jito
-./start_upgrade-agave.sh v2.2.14-jito -j 32
-./start_upgrade-agave.sh x2.2.0-munich # Will prompt for Xandeum confirmation
-./start_upgrade-agave.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
+./start-upgrade.sh v2.2.14-jito
+./start-upgrade.sh v2.2.14-jito -j 32
+./start-upgrade.sh x2.2.0-munich # Will prompt for Xandeum confirmation
+./start-upgrade.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
 \`\`\`
 
 ### 2. Rollback to a Previously Compiled Version
 
 \`\`\`bash
-./start_upgrade-agave.sh rollback
+./start-upgrade.sh rollback
 \`\`\`
 This command will:
 1.  List previously compiled versions.
@@ -111,7 +111,7 @@ This command will:
 ### 3. Clean Old Compiled Versions
 
 \`\`\`bash
-./start_upgrade-agave.sh clean
+./start-upgrade.sh clean
 \`\`\`
 This command will:
 1.  List deletable compiled versions with numbers (active version is excluded).
