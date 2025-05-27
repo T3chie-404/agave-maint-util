@@ -35,8 +35,14 @@ CONFIGURABLE_VALIDATOR_LOG_FILE_PATH="$HOME/data/logs/solana-validator.log"
 # This should typically be the user the validator service runs as.
 CONFIGURABLE_VALIDATOR_LOG_DIR_USER="sol" # Change if your validator runs as a different user
 
-# Name of the systemd service for the validator (for logrotate postrotate action)
+# Name of the systemd service for the validator (for logrotate postrotate action and path update)
 CONFIGURABLE_VALIDATOR_SERVICE_NAME="validator.service"
+
+# Name of the main validator binary
+CONFIGURABLE_VALIDATOR_BINARY_NAME="agave-validator"
+
+# Specific old path segment to look for and replace in the validator service's PATH environment
+OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="/home/sol/.local/share/xandeum/install/releases/active_release"
 # --- End Configuration Variables ---
 
 # ##############################################################################
@@ -82,55 +88,42 @@ configure_active_release_path() {
     fi
 
     # Check if the exact new path line already exists and is NOT commented out
-    # grep -Fx: Fixed string, exact match of whole line
-    # grep -vE '^[[:space:]]*#': Exclude commented lines
-    if grep -Fxq -- "${new_path_line_literal}" "${bashrc_file}" && \
+    if grep -qFx -- "${new_path_line_literal}" "${bashrc_file}" && \
        grep -Fx -- "${new_path_line_literal}" "${bashrc_file}" | grep -qvE -- "^[[:space:]]*#"; then
         log_msg "${GREEN}'${expanded_active_release_path_to_add}' (exact match) already actively configured in PATH in ${bashrc_file}.${NC}"
     else
-        # The exact line we want to add is not currently active (it's missing or commented).
-        # Now, check for ANY OTHER active lines that set an active_release path.
         local generic_active_release_pattern="export PATH=\"[^\"]*/active_release:\$PATH\""
-        
-        # Get all lines matching the generic pattern that are NOT commented out
-        mapfile -t all_active_generic_lines < <(grep -E -- "${generic_active_release_pattern}" "${bashrc_file}" | grep -vE -- "^[[:space:]]*#")
-        
-        local other_conflicting_lines_found=false
-        if [ ${#all_active_generic_lines[@]} -gt 0 ]; then
-            local temp_other_lines=()
-            for line in "${all_active_generic_lines[@]}"; do
-                # Only consider it a "conflicting other" if it's not the exact line we intend to manage
-                if [ "$line" != "$new_path_line_literal" ]; then
-                    temp_other_lines+=("$line")
-                fi
-            done
-            
-            if [ ${#temp_other_lines[@]} -gt 0 ]; then
-                other_conflicting_lines_found=true
-                log_msg "${YELLOW_BOLD}WARNING: Found OTHER existing ACTIVE line(s) in ${bashrc_file} that appear to set an 'active_release' PATH (different from the one being configured):${NC}"
-                for found_line in "${temp_other_lines[@]}"; do
-                    local line_num
-                    line_num=$(grep -nF -- "${found_line}" "${bashrc_file}" | head -n1 | cut -d: -f1)
-                    log_msg "${YELLOW}  L${line_num}: ${found_line}${NC}"
-                done
-                log_msg "${YELLOW}It is highly recommended to manually review ${bashrc_file} and remove old/conflicting 'active_release' PATH entries to avoid unexpected behavior.${NC}"
-            fi
-        fi
+        mapfile -t existing_active_lines < <(grep -E -- "${generic_active_release_pattern}" "${bashrc_file}" | grep -vE -- "^[[:space:]]*#" | grep -vF -- "${new_path_line_literal}")
 
-        # Add the new_path_line_literal if it's not currently active.
-        # The first 'if' condition already determined it's not active.
-        log_msg "Adding new PATH line for '${expanded_active_release_path_to_add}' to ${bashrc_file}..."
-        echo '' >> "${bashrc_file}" 
-        echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${bashrc_file}"
-        echo "${new_path_line_literal}" >> "${bashrc_file}"
-        log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${bashrc_file}.${NC}"
+        if [ ${#existing_active_lines[@]} -gt 0 ]; then
+            log_msg "${YELLOW_BOLD}WARNING: Found OTHER existing ACTIVE line(s) in ${bashrc_file} that appear to set an 'active_release' PATH (different from the one being configured):${NC}"
+            for found_line in "${existing_active_lines[@]}"; do
+                local line_num
+                line_num=$(grep -nF -- "${found_line}" "${bashrc_file}" | head -n1 | cut -d: -f1)
+                log_msg "${YELLOW}  L${line_num}: ${found_line}${NC}"
+            done
+            log_msg "${YELLOW}It is highly recommended to manually review ${bashrc_file} and remove old/conflicting 'active_release' PATH entries to avoid unexpected behavior.${NC}" 
+        fi
+        
+        if ! grep -qFx -- "${new_path_line_literal}" "${bashrc_file}"; then
+             log_msg "Adding new PATH line for '${expanded_active_release_path_to_add}' to ${bashrc_file}..."
+             echo '' >> "${bashrc_file}" 
+             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${bashrc_file}"
+             echo "${new_path_line_literal}" >> "${bashrc_file}"
+             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${bashrc_file}.${NC}"
+        elif grep -qFx -- "#${new_path_line_literal}" "${bashrc_file}"; then
+             log_msg "Found a commented-out version of the target PATH line. Will add a new active one."
+             echo '' >> "${bashrc_file}" 
+             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${bashrc_file}"
+             echo "${new_path_line_literal}" >> "${bashrc_file}"
+             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${bashrc_file}.${NC}"
+        fi
         echo -e "${YELLOW}Please run 'source ~/.bashrc' or open a new terminal for this PATH change to take full effect in your interactive session.${NC}"
     fi
 }
 
 install_rust_and_components() {
     log_msg "Checking for Rust installation for user $(whoami)..."
-    # Check if cargo is in PATH; source .cargo/env if not, for the current script session
     if ! command -v cargo &> /dev/null && [ -f "$HOME/.cargo/env" ]; then
         log_msg "Cargo not in PATH, attempting to source $HOME/.cargo/env for this session..."
         source "$HOME/.cargo/env"
@@ -140,10 +133,9 @@ install_rust_and_components() {
         log_msg "${YELLOW}Rust (cargo/rustup) not found or not in PATH for user $(whoami).${NC}" 
         if confirm_action "Install Rust for user $(whoami) using 'curl https://sh.rustup.rs -sSf | sh'?"; then
             log_msg "Installing Rust for user $(whoami)..."
-            # Run as the current user. rustup installs to $HOME/.cargo
             curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path
             if [ -f "$HOME/.cargo/env" ]; then
-                source "$HOME/.cargo/env" # Source for current script session
+                source "$HOME/.cargo/env" 
                 log_msg "${GREEN}Rust installed for $(whoami). Sourced $HOME/.cargo/env for current script session.${NC}"
                 
                 log_msg "Adding 'source \"\$HOME/.cargo/env\"' to $HOME/.bashrc for persistence..."
@@ -187,7 +179,7 @@ install_apt_dependencies() {
         "libssl-dev" "libudev-dev" "pkg-config" "zlib1g-dev" 
         "llvm" "clang" "cmake" "make" 
         "libprotobuf-dev" "protobuf-compiler" "libclang-dev"
-        "git" "curl" "bc" "jq" "sed" "gawk" # Changed awk to gawk
+        "git" "curl" "bc" "jq" "sed" "gawk" 
     )
     local packages_to_install=()
     for pkg in "${REQUIRED_APT_PACKAGES[@]}"; do
@@ -216,7 +208,7 @@ install_apt_dependencies() {
 
 configure_sysctl() {
     log_msg "Applying sysctl configurations for Agave validator..."
-    SYSCTL_CONF_FILE="/etc/sysctl.d/21-agave-validator.conf" # Name can be configured if needed
+    SYSCTL_CONF_FILE="/etc/sysctl.d/21-agave-validator.conf" 
     
     cat > /tmp/21-agave-validator.conf <<EOF
 # Increase max UDP buffer sizes
@@ -243,7 +235,7 @@ EOF
 configure_systemd_limits() {
     log_msg "Checking and configuring systemd DefaultLimitNOFILE..."
     SYSTEMD_CONF_FILE="/etc/systemd/system.conf"
-    LIMIT_SETTING="DefaultLimitNOFILE=2000000" # Value can be configured if needed
+    LIMIT_SETTING="DefaultLimitNOFILE=2000000" 
 
     if grep -q "^${LIMIT_SETTING}" "${SYSTEMD_CONF_FILE}"; then
         log_msg "${GREEN}Systemd ${LIMIT_SETTING} already set in ${SYSTEMD_CONF_FILE}.${NC}"
@@ -266,8 +258,8 @@ configure_systemd_limits() {
 
 configure_security_limits() {
     log_msg "Configuring security limits for open files..."
-    SECURITY_LIMITS_FILE="/etc/security/limits.d/90-solana-nofiles.conf" # Name can be configured
-    NOFILE_LIMIT="2000000" # Value can be configured
+    SECURITY_LIMITS_FILE="/etc/security/limits.d/90-solana-nofiles.conf" 
+    NOFILE_LIMIT="2000000" 
     
     cat > /tmp/90-solana-nofiles.conf <<EOF
 # Increase process file descriptor count limit for Solana validator
@@ -293,7 +285,7 @@ setup_logrotate() {
         log_msg "Log directory ${LOG_DIR} does not exist. Creating it..."
         sudo mkdir -p "${LOG_DIR}"
         log_msg "Attempting to set ownership of ${LOG_DIR} to ${LOG_DIR_USER}:${LOG_DIR_USER}..."
-        if sudo chown "${LOG_DIR_USER}":"${LOG_DIR_USER}" "${LOG_DIR}"; then # Use variable for user
+        if sudo chown "${LOG_DIR_USER}":"${LOG_DIR_USER}" "${LOG_DIR}"; then 
             log_msg "${GREEN}Log directory ${LOG_DIR} created and ownership set to ${LOG_DIR_USER}.${NC}"
         else
             log_msg "${RED}WARNING: Failed to set ownership of ${LOG_DIR} to ${LOG_DIR_USER}. Log rotation might have permission issues.${NC}"
@@ -308,7 +300,6 @@ ${LOG_FILE_PATH} {
   notifempty
   compress
   delaycompress
-  # copytruncate # This is now the alternative
   postrotate
     systemctl kill -s USR1 ${VALIDATOR_SERVICE_NAME} > /dev/null 2>&1 || true
   endscript
@@ -322,7 +313,78 @@ EOF
     log_msg "${GREEN}Logrotate configuration created at ${LOGROTATE_CONF_FILE}.${NC}"
     echo -e "${YELLOW}Logrotate will run based on its cron schedule (typically daily).${NC}"
     echo -e "${YELLOW}To test: sudo logrotate -df ${LOGROTATE_CONF_FILE}${NC}"
-    echo -e "${YELLOW}Note: Using 'postrotate' with USR1 signal. If ${VALIDATOR_SERVICE_NAME} does not support this, uncomment 'copytruncate' and comment out the 'postrotate' block.${NC}"
+    echo -e "${YELLOW}Note: Using 'postrotate' with USR1 signal. If ${VALIDATOR_SERVICE_NAME} does not support this, use 'copytruncate' instead and comment out the 'postrotate' block.${NC}"
+}
+
+update_validator_service_environment_path() {
+    log_msg "Checking validator systemd service for old PATH environment..."
+    local service_name="${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
+    local service_file_path="/etc/systemd/system/${service_name}"
+    local old_path_segment_to_replace="${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}"
+    local new_path_segment_configurable="${CONFIGURABLE_ACTIVE_RELEASE_PATH}"
+    local new_path_segment_expanded
+    new_path_segment_expanded=$(eval echo "${new_path_segment_configurable}") # Expand $HOME if present
+
+    if [ ! -f "${service_file_path}" ]; then
+        log_msg "${YELLOW}Validator service file ${service_file_path} not found. Skipping PATH update for service.${NC}"
+        return
+    fi
+
+    log_msg "Found service file: ${service_file_path}"
+    local current_env_path_line
+    current_env_path_line=$(grep -E '^\s*Environment="PATH=' "${service_file_path}" || true)
+
+    if [ -z "${current_env_path_line}" ]; then
+        log_msg "${YELLOW}No 'Environment=\"PATH=...\"' line found in ${service_file_path}. Skipping PATH update for service.${NC}"
+        return
+    fi
+
+    log_msg "Current Environment PATH line: ${current_env_path_line}"
+
+    # Extract the actual PATH string value from Environment="PATH=value"
+    local current_path_value
+    current_path_value=$(echo "${current_env_path_line}" | sed -E 's/^\s*Environment="PATH=([^"]+)".*/\1/')
+    
+    # Check if the old path segment exists in the current path value
+    if [[ "${current_path_value}" == *"${old_path_segment_to_replace}"* ]]; then
+        log_msg "${YELLOW}Old path segment '${old_path_segment_to_replace}' found in service PATH.${NC}"
+        
+        # Replace all occurrences of the old path segment with the new one
+        local new_path_value
+        new_path_value="${current_path_value//${old_path_segment_to_replace}/${new_path_segment_expanded}}"
+        
+        local new_env_path_line
+        new_env_path_line="Environment=\"PATH=${new_path_value}\"" # Reconstruct the full line
+
+        log_msg "Proposed new Environment PATH line: ${new_env_path_line}"
+        if confirm_action "Update the Environment PATH in ${service_file_path}?"; then
+            sudo cp "${service_file_path}" "${service_file_path}.bak_$(date +%Y%m%d%H%M%S)"
+            log_msg "Backed up ${service_file_path} to ${service_file_path}.bak_..."
+            
+            # Escape for sed: the variables current_env_path_line and new_env_path_line
+            # Slashes are the main concern. We'll use | as sed delimiter.
+            local escaped_current_env_path_line
+            escaped_current_env_path_line=$(echo "${current_env_path_line}" | sed 's/[&/\]/\\&/g') # Escape common sed special chars
+            local escaped_new_env_path_line
+            escaped_new_env_path_line=$(echo "${new_env_path_line}" | sed 's/[&/\]/\\&/g')
+
+            # Use a different delimiter for sed, e.g., |
+            # This sed command replaces the entire line that starts with 'Environment="PATH='
+            # with the new constructed line. This is safer than trying to replace parts of the line.
+            if sudo sed -i "s|^${escaped_current_env_path_line}$|${escaped_new_env_path_line}|" "${service_file_path}"; then
+                log_msg "${GREEN}Successfully updated Environment PATH in ${service_file_path}.${NC}"
+                log_msg "Reloading systemd daemon..."
+                sudo systemctl daemon-reload
+                log_msg "${GREEN}Systemd daemon reloaded.${NC}"
+            else
+                log_msg "${RED}ERROR: Failed to update ${service_file_path} with sed.${NC}"
+            fi
+        else
+            log_msg "Skipped updating Environment PATH in ${service_file_path}."
+        fi
+    else
+        log_msg "${GREEN}Old path segment '${old_path_segment_to_replace}' not found in service PATH. No update needed for this specific old path.${NC}"
+    fi
 }
 
 
@@ -351,6 +413,10 @@ read -r -p "Enter validator systemd service name [default: ${CONFIGURABLE_VALIDA
 if [ -n "${user_service_name}" ]; then CONFIGURABLE_VALIDATOR_SERVICE_NAME="${user_service_name}"; fi
 log_msg "Using validator service name: ${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
 
+read -r -p "Enter the specific OLD 'active_release' path segment to search for in the service file [default: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}]: " user_old_service_path
+if [ -n "${user_old_service_path}" ]; then OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="${user_old_service_path}"; fi
+log_msg "Will look for old path segment: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE} in service file PATH."
+
 
 if confirm_action "Configure persistent PATH for '${CONFIGURABLE_ACTIVE_RELEASE_PATH}' in ~/.bashrc?"; then
     configure_active_release_path
@@ -378,6 +444,10 @@ fi
 
 if confirm_action "Setup logrotate for validator logs?"; then
     setup_logrotate
+fi
+
+if confirm_action "Check and update validator systemd service Environment PATH if '${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}' is found?"; then
+    update_validator_service_environment_path
 fi
 
 log_msg "${GREEN}System Tuning and Initial Setup Script finished.${NC}"
