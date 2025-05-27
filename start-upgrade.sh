@@ -185,7 +185,7 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 2 --monitor
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -410,11 +410,8 @@ export RUSTFLAGS="-O -C target-cpu=native"
 # Handle SOURCE_DIR creation and cloning
 if [ ! -d "${SOURCE_DIR}" ]; then
     echo -e "${YELLOW}Source directory ${SOURCE_DIR} does not exist.${NC}"
-    # PARENT_OF_SOURCE_DIR=$(dirname "${SOURCE_DIR}") # Not strictly needed if mkdir -p is used carefully
-
+    
     echo -e "${CYAN}Attempting to create ${SOURCE_DIR} with sudo and set ownership to $(whoami)...${NC}"
-    # Create the target directory itself, mkdir -p will create parents if they don't exist.
-    # If parent creation fails due to permissions (e.g. /mnt is not writable by root), mkdir will fail.
     if sudo mkdir -p "${SOURCE_DIR}"; then
         echo -e "${GREEN}Directory structure ${SOURCE_DIR} ensured/created.${NC}"
         if sudo chown "$(whoami)":"$(id -gn)" "${SOURCE_DIR}"; then
@@ -426,7 +423,7 @@ if [ ! -d "${SOURCE_DIR}" ]; then
         fi
     else
         echo -e "${RED}ERROR: Failed to create directory ${SOURCE_DIR} using sudo.${NC}"
-        echo -e "${YELLOW}Please check permissions for parent directories and sudo capabilities.${NC}"
+        echo -e "${YELLOW}Please check permissions for parent directories (e.g. $(dirname "${SOURCE_DIR}")) and sudo capabilities.${NC}"
         exit 1
     fi
 
@@ -513,21 +510,40 @@ unset CARGO_BUILD_JOBS # Clean up environment variable
 echo -e "${GREEN}Build successful for ${target_tag}.${NC}"
 
 COMPILED_VERSION_BIN_DIR="${COMPILED_BASE_DIR}/${target_tag}/bin"
+# Ensure COMPILED_BASE_DIR itself exists and is owned by the current user
+if [ ! -d "${COMPILED_BASE_DIR}" ]; then
+    echo -e "${YELLOW}Compiled base directory ${COMPILED_BASE_DIR} does not exist.${NC}"
+    echo -e "${CYAN}Attempting to create ${COMPILED_BASE_DIR} with sudo and set ownership to $(whoami)...${NC}"
+    if sudo mkdir -p "${COMPILED_BASE_DIR}" && sudo chown "$(whoami)":"$(id -gn)" "${COMPILED_BASE_DIR}"; then
+        echo -e "${GREEN}Directory ${COMPILED_BASE_DIR} created and ownership set.${NC}"
+    else
+        echo -e "${RED}ERROR: Failed to create or set ownership for ${COMPILED_BASE_DIR}.${NC}"
+        exit 1
+    fi
+elif ! [ -w "${COMPILED_BASE_DIR}" ] || ! [ "$(stat -c '%U' "${COMPILED_BASE_DIR}")" == "$(whoami)" ]; then
+    echo -e "${YELLOW}Compiled base directory ${COMPILED_BASE_DIR} exists but might not be writable/owned by $(whoami).${NC}"
+    echo -e "${CYAN}Attempting to set ownership of ${COMPILED_BASE_DIR} to $(whoami)...${NC}"
+    if ! sudo chown -R "$(whoami)":"$(id -gn)" "${COMPILED_BASE_DIR}"; then # Recursive chown for safety
+        echo -e "${RED}WARNING: Failed to ensure ownership for ${COMPILED_BASE_DIR}. Directory creation might fail.${NC}"
+    else
+        echo -e "${GREEN}Ownership of ${COMPILED_BASE_DIR} ensured for $(whoami).${NC}"
+    fi
+fi
+
 echo -e "${CYAN}Creating directory for compiled version: ${COMPILED_VERSION_BIN_DIR}${NC}"
-mkdir -p "${COMPILED_VERSION_BIN_DIR}"
+mkdir -p "${COMPILED_VERSION_BIN_DIR}" # This should now work as COMPILED_BASE_DIR is user-owned
 
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
 # If cargo-install-all.sh was used, binaries are in $SOURCE_DIR/bin/
 # If fallback cargo build was used, binaries are in $SOURCE_DIR/target/release/
 BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release" # Default for fallback
-if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then # Check if cargo-install-all.sh was intended to be used
-    # If cargo-install-all.sh exists, assume it places binaries in $SOURCE_DIR/bin
+if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then 
     if [ -d "${SOURCE_DIR}/bin" ]; then
         BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
-    elif [ ! -d "${SOURCE_DIR}/target/release" ]; then # If $SOURCE_DIR/bin doesn't exist, but target/release also doesn't
+    elif [ ! -d "${SOURCE_DIR}/target/release" ]; then 
         echo -e "${RED}ERROR: Neither ${SOURCE_DIR}/bin nor ${SOURCE_DIR}/target/release found after build!${NC}"
         exit 1
-    else # Fallback to target/release if $SOURCE_DIR/bin doesn't exist but target/release does
+    else 
         echo -e "${YELLOW}Warning: ${SOURCE_DIR}/bin not found, attempting to rsync from ${SOURCE_DIR}/target/release instead.${NC}"
         BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
     fi
@@ -601,7 +617,7 @@ echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
 echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit ...${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 2 --monitor
+"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
 
 echo -e "${GREEN}\nExit command sent. Validator should restart with the new version if managed by a service (e.g., systemd).${NC}"
 echo -e "${GREEN}UPGRADE DONE${NC}"
