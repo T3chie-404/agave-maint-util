@@ -79,9 +79,9 @@ Make the script executable: `chmod +x start-upgrade.sh`
 
 ### 1. Upgrade to a New Version
 
-\`\`\`bash
-./start-upgrade.sh <version_tag> [-j <number_of_jobs>]
-\`\`\`
+```
+./start-upgrade.sh <version_tag> [-j <number_of_jobs>]`
+```
 
 * `<version_tag>`: The Git tag of the version you want to build and install.
     * If the tag ends with `-jito` (e.g., `v2.2.14-jito`), the script will build from `JITO_SOURCE_DIR`.
@@ -90,18 +90,18 @@ Make the script executable: `chmod +x start-upgrade.sh`
 * `-j <number_of_jobs>` (Optional): Specifies the number of parallel jobs for `cargo build` by setting the `CARGO_BUILD_JOBS` environment variable.
 
 **Examples:**
-\`\`\`bash
+```
 ./start-upgrade.sh v2.2.14-jito
 ./start-upgrade.sh v2.2.14-jito -j 32
 ./start-upgrade.sh x2.2.0-munich # Will prompt for Xandeum confirmation
 ./start-upgrade.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
-\`\`\`
+```
 
 ### 2. Rollback to a Previously Compiled Version
 
-\`\`\`bash
+```
 ./start-upgrade.sh rollback
-\`\`\`
+```
 This command will:
 1.  List previously compiled versions.
 2.  Prompt for selection via a numbered menu.
@@ -110,9 +110,9 @@ This command will:
 
 ### 3. Clean Old Compiled Versions
 
-\`\`\`bash
+```
 ./start-upgrade.sh clean
-\`\`\`
+```
 This command will:
 1.  List deletable compiled versions with numbers (active version is excluded).
 2.  Prompt for selection of multiple versions by number.
