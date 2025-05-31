@@ -1,17 +1,17 @@
 #!/bin/bash
 set -euo pipefail # Exit on error, unset variable, or pipe failure
 
-# Script to upgrade, rollback, or clean old versions of the Agave Labs Client.
+# Script to upgrade, rollback, clean old versions, or show available tags/branches for the Agave Labs Client.
 # Assumes that necessary dependencies (Rust, build tools, git) and system tunings
 # (including persistent PATH setup) have already been applied to the system.
 #
-# For upgrade: provide the git tag of the new version.
-# - If tag ends with "-jito", it builds the Jito variant.
-# - If tag starts with "x", it prompts to confirm building Xandeum-Agave.
-# - Otherwise, it prompts to confirm building a vanilla Agave client.
-# - Optionally, specify number of build jobs with "-j <num_jobs>".
-# For rollback: use the 'rollback' argument.
-# For cleaning: use the 'clean' argument.
+# Usage:
+#   Upgrade:        ./script_name <tag_for_upgrade> [-j <num_jobs>]
+#   Rollback:       ./script_name rollback
+#   Clean:          ./script_name clean
+#   List Tags:      ./script_name --list-tags <variant> (variant: agave, jito, xandeum)
+#   List Branches:  ./script_name --list-branches <variant> (variant: agave, jito, xandeum)
+
 
 # Color Definitions
 NC='\033[0m' # No Color
@@ -28,24 +28,20 @@ CYAN='\033[1;36m'
 # ##############################################################################
 
 # --- Configuration Variables ---
-# First argument is either a git tag for upgrade or "rollback"
-MODE_OR_TAG_ARG="${1:-}" # Default to empty if no arg, checked below
+JITO_SOURCE_DIR="$HOME/data/jito-solana" 
+JITO_REPO_URL="https://github.com/jito-foundation/jito-solana.git"
 
-JITO_SOURCE_DIR="$HOME/data/jito-solana" # Path to the Jito variant git repository
-JITO_REPO_URL="https://github.com/jito-foundation/jito-solana.git" # Git URL for Jito
+VANILLA_SOURCE_DIR="$HOME/data/agave"    
+VANILLA_REPO_URL="https://github.com/anza-xyz/agave.git" 
 
-VANILLA_SOURCE_DIR="$HOME/data/agave"    # Path to the vanilla Agave git repository
-VANILLA_REPO_URL="https://github.com/anza-xyz/agave.git" # Git URL for vanilla Agave
+XANDEUM_SOURCE_DIR="$HOME/data/xandeum-agave" 
+XANDEUM_REPO_URL="https://github.com/Xandeum/xandeum-agave.git"
 
-XANDEUM_SOURCE_DIR="$HOME/data/xandeum-agave" # Path to Xandeum-Agave git repository
-XANDEUM_REPO_URL="https://github.com/Xandeum/xandeum-agave.git" # Git URL for Xandeum-Agave
+SOURCE_DIR_TO_SHOW=""
+REPO_URL_TO_SHOW=""
 
-# SOURCE_DIR will be set dynamically based on the tag
-SOURCE_DIR="" 
-REPO_URL_TO_CLONE="" # Will be set dynamically
-
-COMPILED_BASE_DIR="$HOME/data/compiled" # Base directory for compiled versions
-ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release" # Symlink to the active version's bin directory
+COMPILED_BASE_DIR="$HOME/data/compiled" 
+ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release" 
 # IMPORTANT: If you change COMPILED_BASE_DIR (and thus ACTIVE_RELEASE_SYMLINK),
 #            ensure your systemd service file (e.g., /etc/systemd/system/validator.service)
 #            points to the correct path for the agave-validator binary,
@@ -53,15 +49,14 @@ ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release" # Symlink to the ac
 #            Also, ensure your user's ~/.bashrc (configured by the system tuning script)
 #            points to this ACTIVE_RELEASE_SYMLINK for interactive use.
 
-LEDGER_DIR="$HOME/ledger" # Path to the ledger
-BUILD_JOBS=2 # Default number of parallel jobs for cargo build
-VALIDATOR_BINARY_NAME="agave-validator" # Name of the validator binary
+LEDGER_DIR="$HOME/ledger" 
+BUILD_JOBS=2 
+VALIDATOR_BINARY_NAME="agave-validator" 
 # --- End Configuration Variables ---
 
 # ##############################################################################
 # #                                                                            #
 # ##############################################################################
-
 
 # --- Helper: Get Active Version Tag ---
 get_active_version_tag() {
@@ -78,8 +73,88 @@ get_active_version_tag() {
     echo "${active_tag}"
 }
 
+# --- Show Git Info Function (Tags or Branches) ---
+perform_show_git_info() {
+    local info_type="$1" # "tags" or "branches"
+    local variant_to_show="$2"
+    echo -e "${CYAN}--- Showing Available ${info_type} for variant: ${variant_to_show} ---${NC}"
+
+    case "${variant_to_show}" in
+        agave)
+            SOURCE_DIR_TO_SHOW="${VANILLA_SOURCE_DIR}"
+            REPO_URL_TO_SHOW="${VANILLA_REPO_URL}"
+            ;;
+        jito)
+            SOURCE_DIR_TO_SHOW="${JITO_SOURCE_DIR}"
+            REPO_URL_TO_SHOW="${JITO_REPO_URL}"
+            ;;
+        xandeum)
+            SOURCE_DIR_TO_SHOW="${XANDEUM_SOURCE_DIR}"
+            REPO_URL_TO_SHOW="${XANDEUM_REPO_URL}"
+            ;;
+        *)
+            echo -e "${RED}ERROR: Unknown variant '${variant_to_show}'. Valid variants are 'agave', 'jito', 'xandeum'.${NC}"
+            exit 1
+            ;;
+    esac
+
+    echo -e "${CYAN}Using source directory: ${SOURCE_DIR_TO_SHOW}${NC}"
+    echo -e "${CYAN}Repository URL: ${REPO_URL_TO_SHOW}${NC}"
+
+    if [ ! -d "${SOURCE_DIR_TO_SHOW}/.git" ]; then # Check for .git to ensure it's a repo
+        echo -e "${YELLOW}Source directory ${SOURCE_DIR_TO_SHOW} does not exist or is not a git repository.${NC}"
+        PARENT_OF_SOURCE_DIR=$(dirname "${SOURCE_DIR_TO_SHOW}")
+
+        if [ ! -d "${PARENT_OF_SOURCE_DIR}" ]; then
+            echo -e "${RED}ERROR: Parent directory ${PARENT_OF_SOURCE_DIR} for the source code does not exist.${NC}"
+            echo -e "${RED}Please create it and ensure user $(whoami) has write permissions, or run this script with a user that does.${NC}"
+            exit 1
+        fi
+        
+        echo -e "${CYAN}Attempting to create ${SOURCE_DIR_TO_SHOW} with sudo and set ownership to $(whoami)...${NC}"
+        if sudo mkdir -p "${SOURCE_DIR_TO_SHOW}" && sudo chown "$(whoami)":"$(id -gn)" "${SOURCE_DIR_TO_SHOW}"; then
+            echo -e "${GREEN}Directory ${SOURCE_DIR_TO_SHOW} created and ownership set to $(whoami).${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to create or set ownership for ${SOURCE_DIR_TO_SHOW} using sudo.${NC}"
+            echo -e "${YELLOW}Please ensure user $(whoami) can use sudo for these operations, or manually create ${SOURCE_DIR_TO_SHOW} and grant ownership to $(whoami).${NC}"
+            exit 1
+        fi
+
+        echo -e "${CYAN}Attempting to clone repository from ${REPO_URL_TO_SHOW} into ${SOURCE_DIR_TO_SHOW}...${NC}"
+        if git clone "${REPO_URL_TO_SHOW}" "${SOURCE_DIR_TO_SHOW}"; then
+            echo -e "${GREEN}Repository cloned successfully into ${SOURCE_DIR_TO_SHOW}.${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to clone repository from ${REPO_URL_TO_SHOW} into ${SOURCE_DIR_TO_SHOW}.${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}Source directory ${SOURCE_DIR_TO_SHOW} already exists.${NC}"
+        echo -e "${CYAN}Ensuring correct ownership of existing ${SOURCE_DIR_TO_SHOW} for user $(whoami)...${NC}"
+        if ! sudo chown -R "$(whoami)":"$(id -gn)" "${SOURCE_DIR_TO_SHOW}"; then
+            echo -e "${RED}WARNING: Failed to set ownership for existing ${SOURCE_DIR_TO_SHOW}. Git operations might fail.${NC}"
+        fi
+    fi
+
+    cd "${SOURCE_DIR_TO_SHOW}"
+    echo -e "${CYAN}Fetching updates from remote origin...${NC}"
+    git fetch origin --prune --tags -f # Force fetch tags to ensure local is up-to-date
+
+    if [ "${info_type}" == "tags" ]; then
+        echo -e "${GREEN}Newest 20 (approx) available tags (sorted newest semantic versions first):${NC}"
+        git tag -l --sort=-v:refname | head -n 20
+    elif [ "${info_type}" == "branches" ]; then
+        echo -e "${GREEN}Newest 20 (approx) available branches (local and remote-tracking, sorted by most recent commit first):${NC}"
+        git for-each-ref --sort=-committerdate refs/heads refs/remotes --format='%(committerdate:iso8601)    %(refname:short)' | head -n 20
+        echo -e "\n${YELLOW}Tip: Remote branches are prefixed with 'origin/'.${NC}"
+    fi
+
+    exit 0
+}
+
+
 # --- Rollback Function ---
 perform_rollback() {
+    # ... (rollback function remains the same as previous version) ...
     echo -e "${CYAN}--- Initiating Rollback Process ---${NC}"
     local active_version_tag
     active_version_tag=$(get_active_version_tag)
@@ -185,7 +260,7 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 0 --monitor
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -197,10 +272,10 @@ perform_rollback() {
     fi
     exit 0
 }
-# --- End Rollback Function ---
 
 # --- Clean Function ---
 perform_clean() {
+    # ... (clean function remains the same as previous version) ...
     echo -e "${CYAN}--- Initiating Cleanup Process for Old Compiled Versions ---${NC}"
     local active_version_tag
     active_version_tag=$(get_active_version_tag)
@@ -319,15 +394,15 @@ perform_clean() {
     echo -e "\n${GREEN}CLEANUP PROCESS COMPLETE.${NC}"
     exit 0
 }
-# --- End Clean Function ---
 
 # --- Main Script Logic ---
 
 # Assumes dependencies (git, cargo, rsync, jq, etc.) are pre-installed.
-
 if [ -z "${1:-}" ]; then 
     echo -e "${RED}\n:::ERROR::: ${CYAN}No argument provided.${NC}"
     echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_for_upgrade> [-j <num_jobs>]${NC}"
+    echo -e "${CYAN}         or        ${YELLOW}$(basename "$0") --list-tags <variant> | --list-branches <variant>${NC}"
+    echo -e "${CYAN}                   (variant: agave, jito, xandeum)${NC}"
     echo -e "${CYAN}Usage for Rollback: ${YELLOW}$(basename "$0") rollback${NC}"
     echo -e "${CYAN}Usage for Cleanup:  ${YELLOW}$(basename "$0") clean\n${NC}"
     exit 1
@@ -335,13 +410,32 @@ fi
 
 MODE_OR_TAG_ARG="$1"
 
+# Check for --list-tags or --list-branches options
+if [ "${MODE_OR_TAG_ARG}" == "--list-tags" ]; then
+    if [ -z "${2:-}" ]; then
+        echo -e "${RED}ERROR: --list-tags option requires a variant (agave, jito, xandeum).${NC}"
+        exit 1
+    fi
+    perform_show_git_info "tags" "$2" # Exits after showing
+elif [ "${MODE_OR_TAG_ARG}" == "--list-branches" ]; then
+    if [ -z "${2:-}" ]; then
+        echo -e "${RED}ERROR: --list-branches option requires a variant (agave, jito, xandeum).${NC}"
+        exit 1
+    fi
+    perform_show_git_info "branches" "$2" # Exits after showing
+fi
+
+
 if [ "${MODE_OR_TAG_ARG}" == "rollback" ]; then
     perform_rollback 
 elif [ "${MODE_OR_TAG_ARG}" == "clean" ]; then
     perform_clean 
 fi
 
-# If not rollback or clean, assume upgrade. Argument parsing for -j needs to happen here.
+# If not rollback, clean, or a show option, assume upgrade. 
+target_tag="${MODE_OR_TAG_ARG}" # $1 is the tag
+
+# Argument parsing for -j (optional, can be $2 and $3 if present)
 if [ "$#" -gt 1 ]; then 
     if [ "$2" == "-j" ]; then
         if [ -n "$3" ] && [[ "$3" =~ ^[0-9]+$ ]] && [ "$3" -gt 0 ]; then
@@ -349,21 +443,19 @@ if [ "$#" -gt 1 ]; then
             echo -e "${CYAN}Using custom number of build jobs: ${GREEN}${BUILD_JOBS}${NC}"
         else
             echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid value for -j. Please provide a positive integer for number of jobs.${NC}"
-            echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_for_upgrade> [-j <num_jobs>]\n${NC}"
             exit 1
         fi
-        if [ "$#" -gt 3 ]; then
+        if [ "$#" -gt 3 ]; then # $1=tag, $2=-j, $3=jobs. Anything more is an error.
             echo -e "${RED}\n:::ERROR::: ${CYAN}Too many arguments. Unexpected arguments after -j <num_jobs>.${NC}"
             exit 1
         fi
-    else
-        echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid arguments. Expected '-j <num_jobs>' or no other arguments after tag.${NC}"
-        exit 1
+    else # If $2 is present but not -j, it's an error
+         echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid arguments. Expected '-j <num_jobs>' or no other arguments after tag.${NC}"
+         exit 1
     fi
 fi
 
-# Proceed with upgrade logic (if MODE_OR_TAG_ARG was not 'rollback' or 'clean')
-target_tag="${MODE_OR_TAG_ARG}"
+
 echo -e "${CYAN}\n--- Initiating Upgrade Process ---${NC}"
 echo -e "${CYAN}Target version tag for upgrade: ${GREEN}${target_tag}${NC}"
 
@@ -449,7 +541,7 @@ echo -e "${CYAN}Navigating to source directory for upgrade: ${SOURCE_DIR}${NC}"
 cd "${SOURCE_DIR}"
 
 echo -e "${CYAN}Fetching updates from git remote origin for upgrade...${NC}"
-git fetch origin --prune
+git fetch origin --prune --tags -f
 
 echo -e "${GREEN}\nStarting upgrade process for tag: ${CYAN}${target_tag}${NC}"
 sleep 2
@@ -482,15 +574,14 @@ export CARGO_BUILD_JOBS="${BUILD_JOBS}"
 CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
     echo -e "${GREEN}Using ${CARGO_INSTALL_ALL_SCRIPT} for build...${NC}"
-    if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then # Pass '.' as the install directory argument
+    if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then 
         echo -e "${RED}ERROR: Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for tag ${target_tag}${NC}"
         exit 1
     fi
 else
     echo -e "${RED}ERROR: Build script ${CARGO_INSTALL_ALL_SCRIPT} not found or not executable in ${SOURCE_DIR}/scripts/.${NC}"
-    echo -e "${RED}This script is required for building with correct version information.${NC}"
-    echo -e "${YELLOW}Attempting fallback to 'cargo build --release'. Source hash may not be embedded correctly.${NC}"
-    read -r -p "Proceed with fallback build method? (yes/NO): " fallback_confirmation
+    echo -e "${YELLOW}The build process may not embed the source hash correctly without this script.${NC}"
+    read -r -p "Proceed with fallback 'cargo build --release' method? (yes/NO): " fallback_confirmation
     if [[ "${fallback_confirmation,,}" != "yes" && "${fallback_confirmation,,}" != "y" ]]; then
         echo -e "${RED}Build cancelled by user due to missing ${CARGO_INSTALL_ALL_SCRIPT}.${NC}"
         exit 1
@@ -501,16 +592,16 @@ else
     else
         CARGO_CMD="cargo"
     fi
-    if ! ${CARGO_CMD} b --release -j "${BUILD_JOBS}"; then # CI_COMMIT will likely not be used here
+    if ! ${CARGO_CMD} b --release -j "${BUILD_JOBS}"; then 
         echo -e "${RED}ERROR: Standard cargo build failed for tag ${target_tag}${NC}"
         exit 1
     fi
 fi
-unset CARGO_BUILD_JOBS # Clean up environment variable
+unset CARGO_BUILD_JOBS 
 echo -e "${GREEN}Build successful for ${target_tag}.${NC}"
 
 COMPILED_VERSION_BIN_DIR="${COMPILED_BASE_DIR}/${target_tag}/bin"
-# Ensure COMPILED_BASE_DIR itself exists and is owned by the current user
+
 if [ ! -d "${COMPILED_BASE_DIR}" ]; then
     echo -e "${YELLOW}Compiled base directory ${COMPILED_BASE_DIR} does not exist.${NC}"
     echo -e "${CYAN}Attempting to create ${COMPILED_BASE_DIR} with sudo and set ownership to $(whoami)...${NC}"
@@ -523,7 +614,7 @@ if [ ! -d "${COMPILED_BASE_DIR}" ]; then
 elif ! [ -w "${COMPILED_BASE_DIR}" ] || ! [ "$(stat -c '%U' "${COMPILED_BASE_DIR}")" == "$(whoami)" ]; then
     echo -e "${YELLOW}Compiled base directory ${COMPILED_BASE_DIR} exists but might not be writable/owned by $(whoami).${NC}"
     echo -e "${CYAN}Attempting to set ownership of ${COMPILED_BASE_DIR} to $(whoami)...${NC}"
-    if ! sudo chown -R "$(whoami)":"$(id -gn)" "${COMPILED_BASE_DIR}"; then # Recursive chown for safety
+    if ! sudo chown -R "$(whoami)":"$(id -gn)" "${COMPILED_BASE_DIR}"; then 
         echo -e "${RED}WARNING: Failed to ensure ownership for ${COMPILED_BASE_DIR}. Directory creation might fail.${NC}"
     else
         echo -e "${GREEN}Ownership of ${COMPILED_BASE_DIR} ensured for $(whoami).${NC}"
@@ -531,12 +622,10 @@ elif ! [ -w "${COMPILED_BASE_DIR}" ] || ! [ "$(stat -c '%U' "${COMPILED_BASE_DIR
 fi
 
 echo -e "${CYAN}Creating directory for compiled version: ${COMPILED_VERSION_BIN_DIR}${NC}"
-mkdir -p "${COMPILED_VERSION_BIN_DIR}" # This should now work as COMPILED_BASE_DIR is user-owned
+mkdir -p "${COMPILED_VERSION_BIN_DIR}" 
 
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
-# If cargo-install-all.sh was used, binaries are in $SOURCE_DIR/bin/
-# If fallback cargo build was used, binaries are in $SOURCE_DIR/target/release/
-BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release" # Default for fallback
+BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release" 
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then 
     if [ -d "${SOURCE_DIR}/bin" ]; then
         BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
@@ -548,7 +637,6 @@ if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
         BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
     fi
 fi
-
 
 if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
     echo -e "${RED}ERROR: Expected build output directory ${BUILD_OUTPUT_DIR} not found after build!${NC}"
@@ -617,7 +705,7 @@ echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
 echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit ...${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 0 --monitor
+"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
 
 echo -e "${GREEN}\nExit command sent. Validator should restart with the new version if managed by a service (e.g., systemd).${NC}"
 echo -e "${GREEN}UPGRADE DONE${NC}"
