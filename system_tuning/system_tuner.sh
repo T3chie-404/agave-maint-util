@@ -35,7 +35,7 @@ CONFIGURABLE_VALIDATOR_LOG_FILE_PATH="$HOME/data/logs/solana-validator.log"
 # This should typically be the user the validator service runs as.
 CONFIGURABLE_VALIDATOR_LOG_DIR_USER="sol" # Change if your validator runs as a different user
 
-# Name of the systemd service for the validator (for logrotate postrotate action and path update)
+# Name of the systemd service for the validator (for logrotate postrotate action)
 CONFIGURABLE_VALIDATOR_SERVICE_NAME="validator.service"
 
 # Name of the main validator binary
@@ -43,6 +43,9 @@ CONFIGURABLE_VALIDATOR_BINARY_NAME="agave-validator"
 
 # Specific old path segment to look for and replace in the validator service's PATH environment
 OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="/home/sol/.local/share/xandeum/install/releases/active_release"
+
+# Path to the validator start script (e.g., a .sh file that execs the validator)
+CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="$HOME/validator-start.sh"
 # --- End Configuration Variables ---
 
 # ##############################################################################
@@ -327,6 +330,7 @@ update_validator_service_environment_path() {
 
     if [ ! -f "${service_file_path}" ]; then
         log_msg "${YELLOW}Validator service file ${service_file_path} not found. Skipping PATH update for service.${NC}"
+        log_msg "${YELLOW}If you have a service file at a different location, please update it manually if needed.${NC}"
         return
     fi
 
@@ -340,37 +344,29 @@ update_validator_service_environment_path() {
     fi
 
     log_msg "Current Environment PATH line: ${current_env_path_line}"
-
-    # Extract the actual PATH string value from Environment="PATH=value"
+    
     local current_path_value
     current_path_value=$(echo "${current_env_path_line}" | sed -E 's/^\s*Environment="PATH=([^"]+)".*/\1/')
     
-    # Check if the old path segment exists in the current path value
     if [[ "${current_path_value}" == *"${old_path_segment_to_replace}"* ]]; then
         log_msg "${YELLOW}Old path segment '${old_path_segment_to_replace}' found in service PATH.${NC}"
         
-        # Replace all occurrences of the old path segment with the new one
         local new_path_value
         new_path_value="${current_path_value//${old_path_segment_to_replace}/${new_path_segment_expanded}}"
         
         local new_env_path_line
-        new_env_path_line="Environment=\"PATH=${new_path_value}\"" # Reconstruct the full line
+        new_env_path_line="Environment=\"PATH=${new_path_value}\"" 
 
         log_msg "Proposed new Environment PATH line: ${new_env_path_line}"
         if confirm_action "Update the Environment PATH in ${service_file_path}?"; then
             sudo cp "${service_file_path}" "${service_file_path}.bak_$(date +%Y%m%d%H%M%S)"
             log_msg "Backed up ${service_file_path} to ${service_file_path}.bak_..."
             
-            # Escape for sed: the variables current_env_path_line and new_env_path_line
-            # Slashes are the main concern. We'll use | as sed delimiter.
             local escaped_current_env_path_line
-            escaped_current_env_path_line=$(echo "${current_env_path_line}" | sed 's/[&/\]/\\&/g') # Escape common sed special chars
+            escaped_current_env_path_line=$(echo "${current_env_path_line}" | sed 's/[&/\]/\\&/g') 
             local escaped_new_env_path_line
             escaped_new_env_path_line=$(echo "${new_env_path_line}" | sed 's/[&/\]/\\&/g')
 
-            # Use a different delimiter for sed, e.g., |
-            # This sed command replaces the entire line that starts with 'Environment="PATH='
-            # with the new constructed line. This is safer than trying to replace parts of the line.
             if sudo sed -i "s|^${escaped_current_env_path_line}$|${escaped_new_env_path_line}|" "${service_file_path}"; then
                 log_msg "${GREEN}Successfully updated Environment PATH in ${service_file_path}.${NC}"
                 log_msg "Reloading systemd daemon..."
@@ -384,6 +380,110 @@ update_validator_service_environment_path() {
         fi
     else
         log_msg "${GREEN}Old path segment '${old_path_segment_to_replace}' not found in service PATH. No update needed for this specific old path.${NC}"
+    fi
+}
+
+update_validator_start_script_log_path() {
+    log_msg "Checking validator start script for --log path..."
+    local start_script_path_configurable="${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
+    local start_script_path
+    start_script_path=$(eval echo "${start_script_path_configurable}") 
+
+    local desired_log_path_configurable="${CONFIGURABLE_VALIDATOR_LOG_FILE_PATH}"
+    local desired_log_path
+    desired_log_path=$(eval echo "${desired_log_path_configurable}") 
+
+
+    if [ ! -f "${start_script_path}" ]; then
+        log_msg "${YELLOW}Validator start script ${start_script_path} not found. Skipping --log path update.${NC}"
+        return
+    fi
+
+    log_msg "Found validator start script: ${start_script_path}"
+    
+    local current_log_line=""
+    local line_number_of_log_arg=0
+    local temp_line_number=0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        temp_line_number=$((temp_line_number + 1))
+        if [[ "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+        if [[ "$line" =~ --log[[:space:]]+([^[:space:]]+) ]]; then
+            current_log_line="$line" 
+            line_number_of_log_arg="$temp_line_number"
+        fi
+    done < "${start_script_path}"
+
+
+    if [ -z "${current_log_line}" ]; then
+        log_msg "${YELLOW}No active '--log <path>' argument found in ${start_script_path}. No update needed or manual check required.${NC}"
+        return
+    fi
+
+    log_msg "Last active --log line found (L${line_number_of_log_arg}): ${current_log_line}"
+    local current_log_path
+    current_log_path=$(echo "${current_log_line}" | sed -E 's/.*--log[[:space:]]+([^[:space:]]+).*/\1/')
+    current_log_path_expanded=$(eval echo "${current_log_path}") 
+
+
+    log_msg "Current log path in script: '${current_log_path_expanded}'"
+    log_msg "Desired log path (from logrotate setup): '${desired_log_path}'"
+
+    if [ "${current_log_path_expanded}" == "${desired_log_path}" ]; then
+        log_msg "${GREEN}--log path in ${start_script_path} already matches logrotate configuration.${NC}"
+    else
+        log_msg "${YELLOW}The --log path in ${start_script_path} ('${current_log_path_expanded}') is DIFFERENT from the logrotate path ('${desired_log_path}').${NC}"
+        
+        local display_current_log_line="${current_log_line}"
+        # Remove trailing backslash and any space before it for display
+        if [[ "${display_current_log_line}" == *" \\" ]]; then
+            display_current_log_line="${display_current_log_line% \\}"
+        fi
+        
+        local proposed_new_line_display
+        # Construct the proposed new line for display by replacing the path part
+        # This sed command is tricky because current_log_path might contain special characters.
+        # We need to be careful with how we substitute.
+        # A safer way to show the proposed line is to reconstruct it.
+        # Find the part before --log, the --log itself, and the part after the path.
+        local prefix_part=$(echo "${current_log_line}" | sed -E "s|(.*--log[[:space:]]+)${current_log_path}(.*)|\1|")
+        local suffix_part=$(echo "${current_log_line}" | sed -E "s|(.*--log[[:space:]]+)${current_log_path}(.*)|\2|")
+        proposed_new_line_display="${prefix_part}${desired_log_path}${suffix_part}"
+
+        if [[ "${proposed_new_line_display}" == *" \\" ]]; then
+            proposed_new_line_display="${proposed_new_line_display% \\}"
+        fi
+
+        echo -e "${YELLOW_BOLD}Proposed change in ${start_script_path} (on line ${line_number_of_log_arg}):${NC}"
+        echo -e "${RED}- ${display_current_log_line}${NC}"
+        echo -e "${GREEN}+ ${proposed_new_line_display}${NC}"
+
+
+        if confirm_action "Update the --log path in ${start_script_path} to '${desired_log_path}'?"; then
+            sudo cp "${start_script_path}" "${start_script_path}.bak_$(date +%Y%m%d%H%M%S)"
+            log_msg "Backed up ${start_script_path} to ${start_script_path}.bak_..."
+            
+            # Escape paths for sed
+            local escaped_current_log_path_for_sed
+            escaped_current_log_path_for_sed=$(printf '%s\n' "${current_log_path}" | sed 's:[][\\/.^$*]:\\&:g')
+            local escaped_desired_log_path_for_sed
+            escaped_desired_log_path_for_sed=$(printf '%s\n' "${desired_log_path}" | sed 's:[][\\/.^$*]:\\&:g')
+
+            if [ -n "$line_number_of_log_arg" ] && [ "$line_number_of_log_arg" -gt 0 ]; then
+                # Use | as sed delimiter
+                if sudo sed -i "${line_number_of_log_arg}s|--log[[:space:]]\+${escaped_current_log_path_for_sed}|--log ${escaped_desired_log_path_for_sed}|" "${start_script_path}"; then
+                     log_msg "${GREEN}Successfully updated --log path in ${start_script_path} on line ${line_number_of_log_arg}.${NC}"
+                else
+                     log_msg "${RED}ERROR: Failed to update --log path in ${start_script_path} using sed.${NC}"
+                fi
+            else
+                log_msg "${RED}ERROR: Could not determine the line number of the --log argument. Manual update might be needed.${NC}"
+            fi
+        else
+            log_msg "Skipped updating --log path in ${start_script_path}. Please update manually if needed."
+        fi
     fi
 }
 
@@ -412,6 +512,10 @@ log_msg "Validator log directory will be owned by: ${CONFIGURABLE_VALIDATOR_LOG_
 read -r -p "Enter validator systemd service name [default: ${CONFIGURABLE_VALIDATOR_SERVICE_NAME}]: " user_service_name
 if [ -n "${user_service_name}" ]; then CONFIGURABLE_VALIDATOR_SERVICE_NAME="${user_service_name}"; fi
 log_msg "Using validator service name: ${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
+
+read -r -p "Enter path to validator start script (e.g., ~/validator-start.sh) [default: ${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}]: " user_validator_start_script
+if [ -n "${user_validator_start_script}" ]; then CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="${user_validator_start_script}"; fi
+log_msg "Using validator start script path: ${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
 
 read -r -p "Enter the specific OLD 'active_release' path segment to search for in the service file [default: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}]: " user_old_service_path
 if [ -n "${user_old_service_path}" ]; then OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="${user_old_service_path}"; fi
@@ -446,8 +550,12 @@ if confirm_action "Setup logrotate for validator logs?"; then
     setup_logrotate
 fi
 
-if confirm_action "Check and update validator systemd service Environment PATH if '${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}' is found?"; then
+if confirm_action "Check/update validator systemd service Environment PATH if '${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}' is found?"; then
     update_validator_service_environment_path
+fi
+
+if confirm_action "Check/update --log path in validator start script '${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}'?"; then
+    update_validator_start_script_log_path
 fi
 
 log_msg "${GREEN}System Tuning and Initial Setup Script finished.${NC}"
