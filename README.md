@@ -1,4 +1,4 @@
-# Agave Validator Upgrade, Rollback, and Clean Script (`start-upgrade.sh`)
+# Agave Validator Upgrade, Rollback, Clean and List Script (`start-upgrade.sh`)
 
 This script automates the process of upgrading, rolling back, or cleaning old compiled versions of the Agave validator client (including Jito, vanilla Agave, and Xandeum-Agave variants). It handles fetching specified versions from Git repositories, building the binaries, managing compiled versions, and updating a symbolic link to the active version.
 
@@ -23,6 +23,9 @@ This script automates the process of upgrading, rolling back, or cleaning old co
     * Allows interactive selection (by entering numbers) of multiple old versions to delete.
     * Displays the total disk space that will be freed.
     * Prompts for final confirmation before deleting selected versions.
+* **List Tags/Branches Mode:**
+    * `--list-tags <variant>`: Fetches and lists available Git tags for the specified variant (agave, jito, xandeum), sorted newest first. Shows top 20.
+    * `--list-branches <variant>`: Fetches and lists available Git branches for the specified variant, sorted by most recent commit first. Shows top 20.
 * **Version Management:**
     * Stores compiled binaries in version-specific directories under a base `compiled` directory (e.g., `$HOME/data/compiled/<tag>/bin/`).
     * Uses a symbolic link (`active_release`) to point to the currently active version's `bin` directory.
@@ -97,7 +100,16 @@ Make the script executable: `chmod +x start-upgrade.sh`
 ./start-upgrade.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
 ```
 
-### 2. Rollback to a Previously Compiled Version
+### 2. List Available Tags or Branches
+
+```
+./start-upgrade-agave.sh --list-tags <variant>
+./start-upgrade-agave.sh --list-branches <variant>
+```
+* `<variant>`: Can be `agave`, `jito`, or `xandeum`.
+* This will fetch the latest information from the remote repository and list the newest ~20 tags (sorted by version) or branches (sorted by last commit date).
+
+### 3. Rollback to a Previously Compiled Version
 
 ```
 ./start-upgrade.sh rollback
@@ -108,7 +120,7 @@ This command will:
 3.  Update the `active_release` symlink.
 4.  Prompt before initiating a validator restart.
 
-### 3. Clean Old Compiled Versions
+### 4. Clean Old Compiled Versions
 
 ```
 ./start-upgrade.sh clean
