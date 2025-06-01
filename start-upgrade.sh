@@ -52,6 +52,10 @@ ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release"
 LEDGER_DIR="$HOME/ledger" 
 BUILD_JOBS=2 
 VALIDATOR_BINARY_NAME="agave-validator" 
+
+# Default values for validator exit command
+DEFAULT_MAX_DELINQUENT_STAKE=5
+DEFAULT_MIN_IDLE_TIME=5
 # --- End Configuration Variables ---
 
 # ##############################################################################
@@ -154,7 +158,6 @@ perform_show_git_info() {
 
 # --- Rollback Function ---
 perform_rollback() {
-    # ... (rollback function remains the same as previous version) ...
     echo -e "${CYAN}--- Initiating Rollback Process ---${NC}"
     local active_version_tag
     active_version_tag=$(get_active_version_tag)
@@ -252,7 +255,14 @@ perform_rollback() {
     echo -e "${GREEN}Secondary verification attempt complete.${NC}"
 
     echo
-    read -r -p "Rollback to ${version_to_rollback_to} prepared. Press 'x' (then Enter) to exit script WITHOUT restarting validator, or just Enter to proceed with restart: " final_user_input_rb_before_restart
+    local max_delinquent_stake="${DEFAULT_MAX_DELINQUENT_STAKE}"
+    local min_idle_time="${DEFAULT_MIN_IDLE_TIME}"
+    read -r -p "Enter max delinquent stake percentage for restart [default: ${DEFAULT_MAX_DELINQUENT_STAKE}]: " user_max_delinquent
+    if [ -n "${user_max_delinquent}" ]; then max_delinquent_stake="${user_max_delinquent}"; fi
+    read -r -p "Enter min idle time (seconds) for restart [default: ${DEFAULT_MIN_IDLE_TIME}]: " user_min_idle
+    if [ -n "${user_min_idle}" ]; then min_idle_time="${user_min_idle}"; fi
+
+    read -r -p "Rollback to ${version_to_rollback_to} prepared. Press 'x' (then Enter) to exit script WITHOUT restarting validator, or just Enter to proceed with restart (using max_delinquent_stake=${max_delinquent_stake}, min_idle_time=${min_idle_time}): " final_user_input_rb_before_restart
     if [[ "${final_user_input_rb_before_restart,,}" == "x" ]]; then
         echo -e "${CYAN}Exiting script now as per user request. Validator restart NOT initiated.${NC}"
         exit 0
@@ -260,7 +270,7 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake "${max_delinquent_stake}" --min-idle-time "${min_idle_time}" --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -695,7 +705,18 @@ sleep 5
 
 echo -e "${GREEN}\nUpgrade to ${target_tag} is prepared.${NC}"
 echo
-read -r -p "Press 'x' (then Enter) to exit script WITHOUT restarting validator, or just Enter to proceed with restart: " final_user_input_ug_before_restart
+
+local user_max_delinquent_stake="${DEFAULT_MAX_DELINQUENT_STAKE}"
+local user_min_idle_time="${DEFAULT_MIN_IDLE_TIME}"
+
+read -r -p "Enter max delinquent stake percentage for restart [default: ${DEFAULT_MAX_DELINQUENT_STAKE}]: " input_max_delinquent
+if [ -n "${input_max_delinquent}" ]; then user_max_delinquent_stake="${input_max_delinquent}"; fi
+
+read -r -p "Enter min idle time (seconds) for restart [default: ${DEFAULT_MIN_IDLE_TIME}]: " input_min_idle
+if [ -n "${input_min_idle}" ]; then user_min_idle_time="${input_min_idle}"; fi
+
+
+read -r -p "Press 'x' (then Enter) to exit script WITHOUT restarting validator, or just Enter to proceed with restart (using max_delinquent_stake=${user_max_delinquent_stake}, min_idle_time=${user_min_idle_time}): " final_user_input_ug_before_restart
 if [[ "${final_user_input_ug_before_restart,,}" == "x" ]]; then
     echo -e "${CYAN}Exiting script now as per user request. Validator restart NOT initiated.${NC}"
     exit 0
@@ -704,8 +725,8 @@ fi
 echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
-echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit ...${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake 5 --min-idle-time 25 --monitor
+echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit --max-delinquent-stake ${user_max_delinquent_stake} --min-idle-time ${user_min_idle_time} --monitor${NC}"
+"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake "${user_max_delinquent_stake}" --min-idle-time "${user_min_idle_time}" --monitor
 
 echo -e "${GREEN}\nExit command sent. Validator should restart with the new version if managed by a service (e.g., systemd).${NC}"
 echo -e "${GREEN}UPGRADE DONE${NC}"
