@@ -706,8 +706,8 @@ sleep 5
 echo -e "${GREEN}\nUpgrade to ${target_tag} is prepared.${NC}"
 echo
 
-user_max_delinquent_stake="${DEFAULT_MAX_DELINQUENT_STAKE}" # No local keyword
-user_min_idle_time="${DEFAULT_MIN_IDLE_TIME}"             # No local keyword
+user_max_delinquent_stake="${DEFAULT_MAX_DELINQUENT_STAKE}" 
+user_min_idle_time="${DEFAULT_MIN_IDLE_TIME}"             
 
 read -r -p "Enter max delinquent stake percentage for restart [default: ${DEFAULT_MAX_DELINQUENT_STAKE}]: " input_max_delinquent
 if [ -n "${input_max_delinquent}" ]; then user_max_delinquent_stake="${input_max_delinquent}"; fi
