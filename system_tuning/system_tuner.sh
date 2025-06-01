@@ -495,7 +495,7 @@ log_msg "Current PATH for script: $PATH"
 # Prompt for user-configurable paths if they want to change defaults
 echo -e "\n${CYAN_BOLD}--- Path Configurations ---${NC}"
 echo -e "${YELLOW_BOLD}IMPORTANT: Before configuring the 'active_release' PATH, please manually check your${NC} ${YELLOW_BOLD}~/.bashrc${NC}"
-echo -e "${YELLOW_BOLD}If you have any old 'export PATH=.../active_release:\$PATH' lines, consider removing or commenting them out to avoid conflicts.${NC}"
+echo -e "${YELLOW_BOLD}If you have any old 'export PATH=.../active_release:\$PATH' lines, consider removing it to avoid conflicts.${NC}"
 echo -e "${YELLOW_BOLD}This script will add a new entry for the path you specify below if it doesn't already exist in the exact form.${NC}"
 read -r -p "Enter path for 'active_release' symlink [default: ${CONFIGURABLE_ACTIVE_RELEASE_PATH}]: " user_active_release_path
 if [ -n "${user_active_release_path}" ]; then CONFIGURABLE_ACTIVE_RELEASE_PATH="${user_active_release_path}"; fi
