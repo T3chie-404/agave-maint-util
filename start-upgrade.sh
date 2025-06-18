@@ -6,11 +6,11 @@ set -euo pipefail # Exit on error, unset variable, or pipe failure
 # (including persistent PATH setup) have already been applied to the system.
 #
 # Usage:
-#   Upgrade:        ./script_name <tag_for_upgrade> [-j <num_jobs>]
-#   Rollback:       ./script_name rollback
-#   Clean:          ./script_name clean
-#   List Tags:      ./script_name --list-tags <variant> (variant: agave, jito, xandeum)
-#   List Branches:  ./script_name --list-branches <variant> (variant: agave, jito, xandeum)
+#   Upgrade:         ./script_name <tag_or_branch_for_upgrade> [-j <num_jobs>]
+#   Rollback:        ./script_name rollback
+#   Clean:           ./script_name clean
+#   List Tags:       ./script_name --list-tags <variant> (variant: agave, jito, xandeum)
+#   List Branches:   ./script_name --list-branches <variant> (variant: agave, jito, xandeum)
 
 
 # Color Definitions
@@ -23,7 +23,7 @@ CYAN='\033[1;36m'
 
 # ##############################################################################
 # #                                                                            #
-# #                  CHECK THESE CONFIGURATION VARIABLES                       #
+# #               CHECK THESE CONFIGURATION VARIABLES                          #
 # #                                                                            #
 # ##############################################################################
 
@@ -31,7 +31,7 @@ CYAN='\033[1;36m'
 JITO_SOURCE_DIR="$HOME/data/jito-solana" 
 JITO_REPO_URL="https://github.com/jito-foundation/jito-solana.git"
 
-VANILLA_SOURCE_DIR="$HOME/data/agave"    
+VANILLA_SOURCE_DIR="$HOME/data/agave"   
 VANILLA_REPO_URL="https://github.com/anza-xyz/agave.git" 
 
 XANDEUM_SOURCE_DIR="$HOME/data/xandeum-agave" 
@@ -62,19 +62,19 @@ DEFAULT_MIN_IDLE_TIME=5
 # #                                                                            #
 # ##############################################################################
 
-# --- Helper: Get Active Version Tag ---
-get_active_version_tag() {
-    local active_tag=""
+# --- Helper: Get Active Version Directory Name ---
+get_active_version_dir_name() {
+    local active_dir_name=""
     if [ -L "${ACTIVE_RELEASE_SYMLINK}" ]; then
         local symlink_target
         symlink_target=$(readlink -f "${ACTIVE_RELEASE_SYMLINK}")
         if [ -n "${symlink_target}" ]; then
             local version_dir
             version_dir=$(dirname "${symlink_target}")
-            active_tag=$(basename "${version_dir}")
+            active_dir_name=$(basename "${version_dir}")
         fi
     fi
-    echo "${active_tag}"
+    echo "${active_dir_name}"
 }
 
 # --- Show Git Info Function (Tags or Branches) ---
@@ -159,10 +159,10 @@ perform_show_git_info() {
 # --- Rollback Function ---
 perform_rollback() {
     echo -e "${CYAN}--- Initiating Rollback Process ---${NC}"
-    local active_version_tag
-    active_version_tag=$(get_active_version_tag)
+    local active_version_dir_name
+    active_version_dir_name=$(get_active_version_dir_name)
 
-    echo -e "${YELLOW}Available compiled versions (tags) in ${COMPILED_BASE_DIR}:${NC}"
+    echo -e "${YELLOW}Available compiled versions in ${COMPILED_BASE_DIR}:${NC}"
     mapfile -t available_versions < <(find "${COMPILED_BASE_DIR}" -mindepth 1 -maxdepth 1 -type d -not -name "$(basename "${ACTIVE_RELEASE_SYMLINK}")" -not -name "*_before_*" -printf "%f\n" | sort -V)
 
     if [ ${#available_versions[@]} -eq 0 ]; then
@@ -172,7 +172,7 @@ perform_rollback() {
 
     local display_versions=()
     for version in "${available_versions[@]}"; do
-        if [[ "${version}" == "${active_version_tag}" ]]; then
+        if [[ "${version}" == "${active_version_dir_name}" ]]; then
             display_versions+=("${version} (Currently Active)")
         else
             display_versions+=("${version}")
@@ -220,20 +220,20 @@ perform_rollback() {
         echo -e "${YELLOW}Backing up current symlink from $(readlink -f "${ACTIVE_RELEASE_SYMLINK}") to: ${backup_name}${NC}"
         mv "${ACTIVE_RELEASE_SYMLINK}" "${backup_name}"
     elif [ -e "${ACTIVE_RELEASE_SYMLINK}" ]; then
-         echo -e "${RED}ERROR: ${ACTIVE_RELEASE_SYMLINK} exists but is not a symlink. Manual intervention required.${NC}"
-         exit 1
+       echo -e "${RED}ERROR: ${ACTIVE_RELEASE_SYMLINK} exists but is not a symlink. Manual intervention required.${NC}"
+       exit 1
     fi
     
     echo -e "${CYAN}Creating new symlink: ${ACTIVE_RELEASE_SYMLINK} -> ${COMPILED_ROLLBACK_BIN_DIR}${NC}"
     ln -sf "${COMPILED_ROLLBACK_BIN_DIR}" "${ACTIVE_RELEASE_SYMLINK}"
 
     echo -e "${GREEN}\nVerifying rolled-back version using binary from symlink (direct path)...${NC}"
-    VALIDATOR_EXECUTABLE_PATH_ROLLBACK="${ACTIVE_RELEASE_SYMLINK}/${VALIDATOR_BINARY_NAME}"
+    VALIDATOR_EXECUTABLE_PATH_ROLLBACK="${ACTIVE_RELEASE_SYMLINK}/${VALIDATOR_BINARY_name}"
     if [ -x "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" ]; then
         echo -e "${CYAN}Running: ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK} -V${NC}"
         "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" -V
     else
-        echo -e "${RED}ERROR: ${VALIDATOR_BINARY_NAME} not found or not executable at ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}${NC}"
+        echo -e "${RED}ERROR: ${VALIDATOR_BINARY_name} not found or not executable at ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}${NC}"
     fi
     echo -e "${MAGENTA}\nSuccessfully rolled back. Active version now points to binaries from: ${version_to_rollback_to}${NC}"
 
@@ -287,8 +287,8 @@ perform_rollback() {
 perform_clean() {
     # ... (clean function remains the same as previous version) ...
     echo -e "${CYAN}--- Initiating Cleanup Process for Old Compiled Versions ---${NC}"
-    local active_version_tag
-    active_version_tag=$(get_active_version_tag)
+    local active_version_dir_name
+    active_version_dir_name=$(get_active_version_dir_name)
 
     echo -e "${YELLOW}Identifying compiled versions in ${COMPILED_BASE_DIR} (excluding backups)...${NC}"
     mapfile -t all_compiled_versions < <(find "${COMPILED_BASE_DIR}" -mindepth 1 -maxdepth 1 -type d -not -name "$(basename "${ACTIVE_RELEASE_SYMLINK}")" -not -name "*_before_*" -printf "%f\n" | sort -V)
@@ -303,7 +303,7 @@ perform_clean() {
     
     for i in "${!all_compiled_versions[@]}"; do
         version_name="${all_compiled_versions[$i]}"
-        if [[ "${version_name}" == "${active_version_tag}" ]]; then
+        if [[ "${version_name}" == "${active_version_dir_name}" ]]; then
             echo -e "  ${MAGENTA}${version_name} (Currently Active - Not Selectable for Deletion)${NC}"
         else
             deletable_version_tags+=("${version_name}")
@@ -410,24 +410,24 @@ perform_clean() {
 # Assumes dependencies (git, cargo, rsync, jq, etc.) are pre-installed.
 if [ -z "${1:-}" ]; then 
     echo -e "${RED}\n:::ERROR::: ${CYAN}No argument provided.${NC}"
-    echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_for_upgrade> [-j <num_jobs>]${NC}"
-    echo -e "${CYAN}         or        ${YELLOW}$(basename "$0") --list-tags <variant> | --list-branches <variant>${NC}"
+    echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_or_branch_for_upgrade> [-j <num_jobs>]${NC}"
+    echo -e "${CYAN}        or         ${YELLOW}$(basename "$0") --list-tags <variant> | --list-branches <variant>${NC}"
     echo -e "${CYAN}                   (variant: agave, jito, xandeum)${NC}"
     echo -e "${CYAN}Usage for Rollback: ${YELLOW}$(basename "$0") rollback${NC}"
     echo -e "${CYAN}Usage for Cleanup:  ${YELLOW}$(basename "$0") clean\n${NC}"
     exit 1
 fi
 
-MODE_OR_TAG_ARG="$1"
+MODE_OR_REF_ARG="$1"
 
 # Check for --list-tags or --list-branches options
-if [ "${MODE_OR_TAG_ARG}" == "--list-tags" ]; then
+if [ "${MODE_OR_REF_ARG}" == "--list-tags" ]; then
     if [ -z "${2:-}" ]; then
         echo -e "${RED}ERROR: --list-tags option requires a variant (agave, jito, xandeum).${NC}"
         exit 1
     fi
     perform_show_git_info "tags" "$2" # Exits after showing
-elif [ "${MODE_OR_TAG_ARG}" == "--list-branches" ]; then
+elif [ "${MODE_OR_REF_ARG}" == "--list-branches" ]; then
     if [ -z "${2:-}" ]; then
         echo -e "${RED}ERROR: --list-branches option requires a variant (agave, jito, xandeum).${NC}"
         exit 1
@@ -436,14 +436,16 @@ elif [ "${MODE_OR_TAG_ARG}" == "--list-branches" ]; then
 fi
 
 
-if [ "${MODE_OR_TAG_ARG}" == "rollback" ]; then
+if [ "${MODE_OR_REF_ARG}" == "rollback" ]; then
     perform_rollback 
-elif [ "${MODE_OR_TAG_ARG}" == "clean" ]; then
+elif [ "${MODE_OR_REF_ARG}" == "clean" ]; then
     perform_clean 
 fi
 
 # If not rollback, clean, or a show option, assume upgrade. 
-target_tag="${MODE_OR_TAG_ARG}" # $1 is the tag
+target_ref="${MODE_OR_REF_ARG}" # $1 is the tag or branch
+# Sanitize the ref name for use as a directory name (replaces '/' with '_')
+sanitized_ref_name=$(echo "${target_ref}" | tr '/' '_')
 
 # Argument parsing for -j (optional, can be $2 and $3 if present)
 if [ "$#" -gt 1 ]; then 
@@ -455,27 +457,27 @@ if [ "$#" -gt 1 ]; then
             echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid value for -j. Please provide a positive integer for number of jobs.${NC}"
             exit 1
         fi
-        if [ "$#" -gt 3 ]; then # $1=tag, $2=-j, $3=jobs. Anything more is an error.
+        if [ "$#" -gt 3 ]; then # $1=ref, $2=-j, $3=jobs. Anything more is an error.
             echo -e "${RED}\n:::ERROR::: ${CYAN}Too many arguments. Unexpected arguments after -j <num_jobs>.${NC}"
             exit 1
         fi
     else # If $2 is present but not -j, it's an error
-         echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid arguments. Expected '-j <num_jobs>' or no other arguments after tag.${NC}"
-         exit 1
+       echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid arguments. Expected '-j <num_jobs>' or no other arguments after ref.${NC}"
+       exit 1
     fi
 fi
 
 
 echo -e "${CYAN}\n--- Initiating Upgrade Process ---${NC}"
-echo -e "${CYAN}Target version tag for upgrade: ${GREEN}${target_tag}${NC}"
+echo -e "${CYAN}Target ref (tag/branch) for upgrade: ${GREEN}${target_ref}${NC}"
 
-# Determine which source directory to use based on the tag
-if [[ "${target_tag}" == *"-jito" ]]; then
+# Determine which source directory to use based on the ref
+if [[ "${target_ref}" == *"-jito" ]]; then
     SOURCE_DIR="${JITO_SOURCE_DIR}"
     REPO_URL_TO_CLONE="${JITO_REPO_URL}"
-    echo -e "${GREEN}Tag ends with '-jito'. Using Jito source directory: ${SOURCE_DIR}${NC}"
-elif [[ "${target_tag}" == x* ]]; then # If tag starts with 'x', it could be Xandeum
-    echo -e "${YELLOW}The provided tag '${target_tag}' starts with 'x'.${NC}"
+    echo -e "${GREEN}Ref ends with '-jito'. Using Jito source directory: ${SOURCE_DIR}${NC}"
+elif [[ "${target_ref}" == x* ]]; then # If ref starts with 'x', it could be Xandeum
+    echo -e "${YELLOW}The provided ref '${target_ref}' starts with 'x'.${NC}"
     echo -e "${YELLOW}This might be a Xandeum-Agave client build.${NC}"
     echo -e " - Xandeum-Agave client will be built from: ${XANDEUM_SOURCE_DIR}"
     
@@ -485,11 +487,11 @@ elif [[ "${target_tag}" == x* ]]; then # If tag starts with 'x', it could be Xan
         REPO_URL_TO_CLONE="${XANDEUM_REPO_URL}"
         echo -e "${GREEN}Confirmed. Using Xandeum-Agave source directory: ${SOURCE_DIR}${NC}"
     else
-        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For vanilla, use a tag not starting with 'x'.${NC}"
+        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For vanilla, use a ref not starting with 'x'.${NC}"
         exit 1
     fi
 else # Default to vanilla Agave if not ending in -jito and not starting with x
-    echo -e "${YELLOW}The provided tag '${target_tag}' does not end with '-jito' and does not start with 'x'.${NC}"
+    echo -e "${YELLOW}The provided ref '${target_ref}' does not end with '-jito' and does not start with 'x'.${NC}"
     echo -e "${YELLOW}This suggests you might want to build the vanilla Agave client.${NC}"
     echo -e " - Vanilla Agave client will be built from: ${VANILLA_SOURCE_DIR}"
     
@@ -499,14 +501,14 @@ else # Default to vanilla Agave if not ending in -jito and not starting with x
         REPO_URL_TO_CLONE="${VANILLA_REPO_URL}"
         echo -e "${GREEN}Confirmed. Using vanilla Agave source directory: ${SOURCE_DIR}${NC}"
     else
-        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For Xandeum, use an 'x' prefixed tag.${NC}"
+        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For Xandeum, use an 'x' prefixed ref.${NC}"
         exit 1
     fi
 fi
 
 # --- Upgrade Path (continues if not rollback or clean) ---
 
-export tag="${target_tag}" 
+export tag="${target_ref}" 
 export RUSTFLAGS="-O -C target-cpu=native"
 
 # Handle SOURCE_DIR creation and cloning
@@ -553,29 +555,45 @@ cd "${SOURCE_DIR}"
 echo -e "${CYAN}Fetching updates from git remote origin for upgrade...${NC}"
 git fetch origin --prune --tags -f
 
-echo -e "${GREEN}\nStarting upgrade process for tag: ${CYAN}${target_tag}${NC}"
+echo -e "${GREEN}\nStarting upgrade process for ref: ${CYAN}${target_ref}${NC}"
 sleep 2
 
-echo -e "${CYAN}Attempting to checkout tag: ${target_tag}${NC}"
+echo -e "${CYAN}Attempting to checkout ref: ${target_ref}${NC}"
 echo -e "${YELLOW}Note: Forcing checkout. Any uncommitted local changes in the source directory may be overwritten.${NC}"
-git checkout -f "${target_tag}" 
+git checkout -f "${target_ref}" 
 if [ $? -ne 0 ]; then
-    echo -e "${RED}ERROR: Failed to checkout tag ${target_tag}${NC}"
+    echo -e "${RED}ERROR: Failed to checkout ref '${target_ref}'. It may not exist on the remote repository.${NC}"
     exit 1
 fi
-echo -e "${GREEN}Successfully checked out tag: ${target_tag}${NC}"
+echo -e "${GREEN}Successfully checked out ref: ${target_ref}${NC}"
+
+# If the checked-out ref is a branch (not a detached HEAD from a tag), pull the latest changes.
+if git symbolic-ref -q HEAD &> /dev/null; then
+    # We are on a branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    echo -e "${CYAN}Checked out a branch ('${current_branch}'). Pulling latest changes from origin...${NC}"
+    if git pull origin "${current_branch}"; then
+        echo -e "${GREEN}Successfully pulled latest changes for branch '${current_branch}'.${NC}"
+    else
+        echo -e "${RED}WARNING: 'git pull' failed for branch '${current_branch}'. The build will proceed with the last known state of the branch, which might be old.${NC}"
+    fi
+else
+    # We are in a detached HEAD state (e.g., from a tag)
+    echo -e "${CYAN}Checked out a tag or specific commit (detached HEAD). Skipping 'git pull'.${NC}"
+fi
+
 
 echo -e "${CYAN}Updating submodules...${NC}"
 GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR" git submodule update --init --recursive
 if [ $? -ne 0 ]; then
-    echo -e "${RED}ERROR: Failed to update submodules for tag ${target_tag}${NC}"
+    echo -e "${RED}ERROR: Failed to update submodules for ref ${target_ref}${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}Ready to build...${NC}"
 sleep 5
 
-echo -e "${GREEN}Building tag ${target_tag} (CARGO_BUILD_JOBS=${BUILD_JOBS})...${NC}"
+echo -e "${GREEN}Building ref ${target_ref} (CARGO_BUILD_JOBS=${BUILD_JOBS})...${NC}"
 export CI_COMMIT
 CI_COMMIT=$(git rev-parse HEAD)
 echo -e "${CYAN}Using CI_COMMIT=${CI_COMMIT} for the build.${NC}"
@@ -585,7 +603,7 @@ CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
     echo -e "${GREEN}Using ${CARGO_INSTALL_ALL_SCRIPT} for build...${NC}"
     if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then 
-        echo -e "${RED}ERROR: Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for tag ${target_tag}${NC}"
+        echo -e "${RED}ERROR: Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
         exit 1
     fi
 else
@@ -603,14 +621,14 @@ else
         CARGO_CMD="cargo"
     fi
     if ! ${CARGO_CMD} b --release -j "${BUILD_JOBS}"; then 
-        echo -e "${RED}ERROR: Standard cargo build failed for tag ${target_tag}${NC}"
+        echo -e "${RED}ERROR: Standard cargo build failed for ref ${target_ref}${NC}"
         exit 1
     fi
 fi
 unset CARGO_BUILD_JOBS 
-echo -e "${GREEN}Build successful for ${target_tag}.${NC}"
+echo -e "${GREEN}Build successful for ${target_ref}.${NC}"
 
-COMPILED_VERSION_BIN_DIR="${COMPILED_BASE_DIR}/${target_tag}/bin"
+COMPILED_VERSION_BIN_DIR="${COMPILED_BASE_DIR}/${sanitized_ref_name}/bin"
 
 if [ ! -d "${COMPILED_BASE_DIR}" ]; then
     echo -e "${YELLOW}Compiled base directory ${COMPILED_BASE_DIR} does not exist.${NC}"
@@ -663,8 +681,8 @@ if [ -L "${ACTIVE_RELEASE_SYMLINK}" ]; then
     echo -e "${YELLOW}Backing up current symlink from $(readlink -f "${ACTIVE_RELEASE_SYMLINK}") to: ${backup_name}${NC}"
     mv "${ACTIVE_RELEASE_SYMLINK}" "${backup_name}"
 elif [ -e "${ACTIVE_RELEASE_SYMLINK}" ]; then 
-     echo -e "${RED}ERROR: ${ACTIVE_RELEASE_SYMLINK} exists but is not a symlink. Manual intervention required.${NC}"
-     exit 1
+   echo -e "${RED}ERROR: ${ACTIVE_RELEASE_SYMLINK} exists but is not a symlink. Manual intervention required.${NC}"
+   exit 1
 fi 
 
 echo -e "${CYAN}Removing old symlink (if any remaining after backup attempt): ${ACTIVE_RELEASE_SYMLINK}${NC}"
@@ -681,7 +699,7 @@ if [ -x "${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" ]; then
 else
     echo -e "${RED}ERROR: ${VALIDATOR_BINARY_NAME} not found or not executable at ${VALIDATOR_EXECUTABLE_PATH_UPGRADE}${NC}"
 fi
-echo -e "${MAGENTA}\nTag used for this upgrade = ${target_tag}${NC}"
+echo -e "${MAGENTA}\nRef used for this upgrade = ${target_ref} (compiled into directory: ${sanitized_ref_name})${NC}"
 
 echo -e "${GREEN}\nPerforming secondary verification (from home directory using system PATH)...${NC}"
 ( 
@@ -703,11 +721,11 @@ echo -e "${GREEN}Secondary verification attempt complete.${NC}"
 echo -e "${GREEN}Verification step complete. Pausing before restart prompt...${NC}"
 sleep 5
 
-echo -e "${GREEN}\nUpgrade to ${target_tag} is prepared.${NC}"
+echo -e "${GREEN}\nUpgrade to ${target_ref} is prepared.${NC}"
 echo
 
 user_max_delinquent_stake="${DEFAULT_MAX_DELINQUENT_STAKE}" 
-user_min_idle_time="${DEFAULT_MIN_IDLE_TIME}"             
+user_min_idle_time="${DEFAULT_MIN_IDLE_TIME}"         
 
 read -r -p "Enter max delinquent stake percentage for restart [default: ${DEFAULT_MAX_DELINQUENT_STAKE}]: " input_max_delinquent
 if [ -n "${input_max_delinquent}" ]; then user_max_delinquent_stake="${input_max_delinquent}"; fi
