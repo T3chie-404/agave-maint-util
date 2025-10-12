@@ -743,8 +743,8 @@ fi
 echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
-echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit --max-delinquent-stake ${user_max_delinquent_stake} --min-idle-time ${user_min_idle_time} --monitor${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake "${user_max_delinquent_stake}" --min-idle-time "${user_min_idle_time}" --monitor
+echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit --max-delinquent-stake ${user_max_delinquent_stake} --min-idle-time ${user_min_idle_time} --no-wait-for-exit --monitor${NC}"
+"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake "${user_max_delinquent_stake}" --min-idle-time "${user_min_idle_time}" --no-wait-for-exit --monitor
 
 echo -e "${GREEN}\nExit command sent. Validator should restart with the new version if managed by a service (e.g., systemd).${NC}"
 echo -e "${GREEN}UPGRADE DONE${NC}"
