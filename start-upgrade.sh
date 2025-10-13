@@ -77,6 +77,85 @@ get_active_version_dir_name() {
     echo "${active_dir_name}"
 }
 
+# --- Helper: Check and Install APT Packages ---
+check_and_install_apt_packages() {
+    echo -e "${CYAN}--- Checking APT Package Prerequisites ---${NC}"
+    local required_packages=(
+        "sudo" "curl" "git" "build-essential" "pkg-config" 
+        "libssl-dev" "libudev-dev" "zlib1g-dev" "llvm" "clang" 
+        "cmake" "make" "libprotobuf-dev" "protobuf-compiler" 
+        "tmux" "vnstat"
+    )
+    local missing_packages=()
+    
+    for pkg in "${required_packages[@]}"; do
+        if ! dpkg -s "$pkg" &> /dev/null; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        echo -e "${GREEN}All required APT packages are already installed.${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}Missing packages: ${missing_packages[*]}${NC}"
+    read -r -p "Install missing packages now? (yes/no): " install_apt_confirm
+    if [[ "${install_apt_confirm,,}" == "yes" || "${install_apt_confirm,,}" == "y" ]]; then
+        echo -e "${CYAN}Updating APT and installing missing packages...${NC}"
+        sudo apt-get update -y
+        sudo apt-get install -y "${missing_packages[@]}"
+        echo -e "${GREEN}APT packages installed successfully.${NC}"
+    else
+        echo -e "${RED}Skipped APT package installation. Build may fail if dependencies are missing.${NC}"
+    fi
+}
+
+# --- Helper: Check and Setup Rust/Cargo ---
+check_and_setup_rust() {
+    echo -e "${CYAN}--- Checking Rust/Cargo Prerequisites ---${NC}"
+    
+    # Try sourcing cargo env if it exists but cargo not in PATH
+    if ! command -v cargo &> /dev/null && [ -f "$HOME/.cargo/env" ]; then
+        echo -e "${CYAN}Sourcing $HOME/.cargo/env...${NC}"
+        source "$HOME/.cargo/env"
+    fi
+    
+    if ! command -v cargo &> /dev/null || ! command -v rustup &> /dev/null; then
+        echo -e "${YELLOW}Rust (cargo/rustup) not found for user $(whoami).${NC}"
+        read -r -p "Install Rust now? (yes/no): " install_rust_confirm
+        if [[ "${install_rust_confirm,,}" == "yes" || "${install_rust_confirm,,}" == "y" ]]; then
+            echo -e "${CYAN}Installing Rust...${NC}"
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path
+            if [ -f "$HOME/.cargo/env" ]; then
+                source "$HOME/.cargo/env"
+                echo -e "${GREEN}Rust installed successfully.${NC}"
+            else
+                echo -e "${RED}ERROR: Rust installation failed.${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${RED}Rust installation skipped. Cannot proceed with build.${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}Rust/Cargo already installed.${NC}"
+    fi
+    
+    # Prompt for Rust updates
+    if command -v rustup &> /dev/null; then
+        read -r -p "Update Rust and add rustfmt component? (yes/no): " update_rust_confirm
+        if [[ "${update_rust_confirm,,}" == "yes" || "${update_rust_confirm,,}" == "y" ]]; then
+            echo -e "${CYAN}Adding rustfmt component and updating Rust...${NC}"
+            rustup component add rustfmt
+            rustup update
+            echo -e "${GREEN}Rust updated successfully.${NC}"
+        else
+            echo -e "${YELLOW}Skipped Rust updates.${NC}"
+        fi
+    fi
+}
+
 # --- Show Git Info Function (Tags or Branches) ---
 perform_show_git_info() {
     local info_type="$1" # "tags" or "branches"
@@ -504,6 +583,18 @@ else # Default to vanilla Agave if not ending in -jito and not starting with x
         echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For Xandeum, use an 'x' prefixed ref.${NC}"
         exit 1
     fi
+fi
+
+# --- Prerequisite Checks (for upgrade only) ---
+echo
+read -r -p "Check and install prerequisites before building? (yes/no): " check_prereqs_confirm
+if [[ "${check_prereqs_confirm,,}" == "yes" || "${check_prereqs_confirm,,}" == "y" ]]; then
+    check_and_install_apt_packages
+    check_and_setup_rust
+    echo -e "${GREEN}Prerequisite checks complete.${NC}"
+    sleep 2
+else
+    echo -e "${YELLOW}Skipped prerequisite checks.${NC}"
 fi
 
 # --- Upgrade Path (continues if not rollback or clean) ---

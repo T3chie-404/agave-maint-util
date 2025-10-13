@@ -6,6 +6,11 @@ This script automates the process of upgrading, rolling back, or cleaning old co
 
 * **Upgrade Mode:**
     * Builds a specific version tag of the validator client.
+    * **Interactive Prerequisite Checks:**
+        * Prompts to check and install missing APT packages (build-essential, libssl-dev, protobuf-compiler, etc.).
+        * Prompts to install Rust/Cargo if not present for the current user.
+        * Prompts to update Rust and add rustfmt component if desired.
+        * Efficiently checks which packages are missing and only installs those needed.
     * Supports building different client variants:
         * **Jito:** If the tag ends with `-jito`.
         * **Xandeum-Agave:** If the tag starts with `x` (and does not end with `-jito`); prompts for confirmation.
@@ -42,9 +47,9 @@ This script automates the process of upgrading, rolling back, or cleaning old co
 ## Prerequisites
 
 1.  **Bash Shell:** The script is written for Bash.
-2.  **Git:** Required for fetching source code, cloning, and checking out versions.
-3.  **Rust and Cargo:** Required for building the validator client from source. (Assumed to be pre-installed, e.g., by a separate system tuning script).
-4.  **Build Tools & Dependencies:** `rsync`, `mkdir`, `rm`, `ln`, `mv`, `du`, `find`, `awk`, `sort`, and common build essentials (like `libssl-dev`, `pkg-config`, etc., typically handled by a system setup script).
+2.  **Git:** Required for fetching source code, cloning, and checking out versions. The script can prompt to install this via APT if missing.
+3.  **Rust and Cargo:** Required for building the validator client from source. The script includes interactive prompts to install Rust and necessary components (rustfmt) if not present.
+4.  **Build Tools & Dependencies:** The script includes interactive prompts to check and install missing APT packages including: `build-essential`, `pkg-config`, `libssl-dev`, `libudev-dev`, `zlib1g-dev`, `llvm`, `clang`, `cmake`, `make`, `libprotobuf-dev`, `protobuf-compiler`, `tmux`, `vnstat`, and other utilities (`rsync`, `mkdir`, `rm`, `ln`, `mv`, `du`, `find`, `awk`, `sort`).
 5.  **Validator Source Code (will be cloned if not present):**
     * Jito variant: Default path `JITO_SOURCE_DIR` (e.g., `$HOME/data/jito-solana`).
     * Vanilla Agave: Default path `VANILLA_SOURCE_DIR` (e.g., `$HOME/data/agave`).
@@ -133,7 +138,7 @@ This command will:
 
 ## Script Workflow (Simplified)
 
-* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
+* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), prompts for prerequisite checks (APT packages and Rust/Cargo installation/updates), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
 * **Rollback:** Lists versions, prompts for selection, updates symlink, verifies, prompts for restart.
 * **Clean:** Lists deletable versions, prompts for numbered selection, confirms, deletes.
 
