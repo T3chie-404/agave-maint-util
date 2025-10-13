@@ -236,22 +236,44 @@ EOF
 }
 
 configure_systemd_limits() {
-    log_msg "Checking and configuring systemd DefaultLimitNOFILE..."
+    log_msg "Checking and configuring systemd DefaultLimitNOFILE and DefaultLimitMEMLOCK..."
     SYSTEMD_CONF_FILE="/etc/systemd/system.conf"
-    LIMIT_SETTING="DefaultLimitNOFILE=2000000" 
-
-    if grep -q "^${LIMIT_SETTING}" "${SYSTEMD_CONF_FILE}"; then
-        log_msg "${GREEN}Systemd ${LIMIT_SETTING} already set in ${SYSTEMD_CONF_FILE}.${NC}"
+    NOFILE_LIMIT_SETTING="DefaultLimitNOFILE=2000000" 
+    MEMLOCK_LIMIT_SETTING="DefaultLimitMEMLOCK=2000000000"
+    
+    local needs_reload=false
+    
+    # Check and add DefaultLimitNOFILE
+    if grep -q "^${NOFILE_LIMIT_SETTING}" "${SYSTEMD_CONF_FILE}"; then
+        log_msg "${GREEN}Systemd ${NOFILE_LIMIT_SETTING} already set in ${SYSTEMD_CONF_FILE}.${NC}"
     else
-        log_msg "${YELLOW}Systemd ${LIMIT_SETTING} not found. Adding it to ${SYSTEMD_CONF_FILE}.${NC}"
-        sudo cp "${SYSTEMD_CONF_FILE}" "${SYSTEMD_CONF_FILE}.bak_$(date +%Y%m%d%H%M%S)"
-        log_msg "Backed up ${SYSTEMD_CONF_FILE} to ${SYSTEMD_CONF_FILE}.bak_..."
-        
+        log_msg "${YELLOW}Systemd ${NOFILE_LIMIT_SETTING} not found. Adding it to ${SYSTEMD_CONF_FILE}.${NC}"
+        if [ "$needs_reload" = false ]; then
+            sudo cp "${SYSTEMD_CONF_FILE}" "${SYSTEMD_CONF_FILE}.bak_$(date +%Y%m%d%H%M%S)"
+            log_msg "Backed up ${SYSTEMD_CONF_FILE} to ${SYSTEMD_CONF_FILE}.bak_..."
+        fi
         sudo sed -i '/^DefaultLimitNOFILE=/d' "${SYSTEMD_CONF_FILE}"
-        
-        echo "${LIMIT_SETTING}" | sudo tee -a "${SYSTEMD_CONF_FILE}" > /dev/null
-        log_msg "${GREEN}Added ${LIMIT_SETTING} to ${SYSTEMD_CONF_FILE}.${NC}"
-        
+        echo "${NOFILE_LIMIT_SETTING}" | sudo tee -a "${SYSTEMD_CONF_FILE}" > /dev/null
+        log_msg "${GREEN}Added ${NOFILE_LIMIT_SETTING} to ${SYSTEMD_CONF_FILE}.${NC}"
+        needs_reload=true
+    fi
+    
+    # Check and add DefaultLimitMEMLOCK
+    if grep -q "^${MEMLOCK_LIMIT_SETTING}" "${SYSTEMD_CONF_FILE}"; then
+        log_msg "${GREEN}Systemd ${MEMLOCK_LIMIT_SETTING} already set in ${SYSTEMD_CONF_FILE}.${NC}"
+    else
+        log_msg "${YELLOW}Systemd ${MEMLOCK_LIMIT_SETTING} not found. Adding it to ${SYSTEMD_CONF_FILE}.${NC}"
+        if [ "$needs_reload" = false ]; then
+            sudo cp "${SYSTEMD_CONF_FILE}" "${SYSTEMD_CONF_FILE}.bak_$(date +%Y%m%d%H%M%S)"
+            log_msg "Backed up ${SYSTEMD_CONF_FILE} to ${SYSTEMD_CONF_FILE}.bak_..."
+        fi
+        sudo sed -i '/^DefaultLimitMEMLOCK=/d' "${SYSTEMD_CONF_FILE}"
+        echo "${MEMLOCK_LIMIT_SETTING}" | sudo tee -a "${SYSTEMD_CONF_FILE}" > /dev/null
+        log_msg "${GREEN}Added ${MEMLOCK_LIMIT_SETTING} to ${SYSTEMD_CONF_FILE}.${NC}"
+        needs_reload=true
+    fi
+    
+    if [ "$needs_reload" = true ]; then
         log_msg "Reloading systemd configuration..."
         sudo systemctl daemon-reload
         log_msg "${GREEN}Systemd configuration reloaded.${NC}"
@@ -260,19 +282,21 @@ configure_systemd_limits() {
 }
 
 configure_security_limits() {
-    log_msg "Configuring security limits for open files..."
+    log_msg "Configuring security limits for open files and memory lock..."
     SECURITY_LIMITS_FILE="/etc/security/limits.d/90-solana-nofiles.conf" 
     NOFILE_LIMIT="2000000" 
     
     cat > /tmp/90-solana-nofiles.conf <<EOF
 # Increase process file descriptor count limit for Solana validator
 * - nofile ${NOFILE_LIMIT}
+# Increase memory locked limit (kB)
+* - memlock 2000000
 EOF
     log_msg "Moving temporary security limits config to ${SECURITY_LIMITS_FILE}..."
     sudo mv /tmp/90-solana-nofiles.conf "${SECURITY_LIMITS_FILE}"
     sudo chown root:root "${SECURITY_LIMITS_FILE}"
     sudo chmod 0644 "${SECURITY_LIMITS_FILE}"
-    log_msg "${GREEN}Security limits for open files configured in ${SECURITY_LIMITS_FILE}.${NC}"
+    log_msg "${GREEN}Security limits for open files and memory lock configured in ${SECURITY_LIMITS_FILE}.${NC}"
     echo -e "${YELLOW}These limits typically apply upon new login sessions.${NC}"
 }
 
@@ -538,11 +562,11 @@ if confirm_action "Apply sysctl configurations (UDP buffers, mmap count, open fi
     configure_sysctl
 fi
 
-if confirm_action "Configure systemd DefaultLimitNOFILE?"; then
+if confirm_action "Configure systemd DefaultLimitNOFILE and DefaultLimitMEMLOCK?"; then
     configure_systemd_limits
 fi
 
-if confirm_action "Configure security limits for open files (nofile)?"; then
+if confirm_action "Configure security limits for open files (nofile) and memory lock (memlock)?"; then
     configure_security_limits
 fi
 

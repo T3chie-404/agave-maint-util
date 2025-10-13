@@ -29,8 +29,8 @@ The primary goal of this script is to automate common setup tasks, including:
     - Warns if other active `active_release` paths are detected in `~/.bashrc`.
 - **System Tuning:**
     - **Sysctl:** Applies kernel parameter tunings by creating `/etc/sysctl.d/21-agave-validator.conf`.
-    - **Systemd Limits:** Configures `DefaultLimitNOFILE` in `/etc/systemd/system.conf`.
-    - **Security Limits:** Creates `/etc/security/limits.d/90-solana-nofiles.conf` to increase the open file descriptor limit for user sessions.
+    - **Systemd Limits:** Configures `DefaultLimitNOFILE` and `DefaultLimitMEMLOCK` in `/etc/systemd/system.conf`.
+    - **Security Limits:** Creates `/etc/security/limits.d/90-solana-nofiles.conf` to increase the open file descriptor limit and memory lock limit for user sessions.
 - **Logrotate Setup:**
     - Creates a logrotate configuration file for the validator's log file.
     - Creates the log directory if it doesn't exist and attempts to set ownership to the configured user.
@@ -70,7 +70,7 @@ The script will prompt you at the beginning to confirm or change the following d
 
 Other internal defaults that can be modified by editing the script:
 - `REQUIRED_APT_PACKAGES` array.
-- Specific values for `sysctl`, `systemd` (`DefaultLimitNOFILE`), and `security/limits` (`nofile`).
+- Specific values for `sysctl`, `systemd` (`DefaultLimitNOFILE`, `DefaultLimitMEMLOCK`), and `security/limits` (`nofile`, `memlock`).
 - Logrotate parameters (e.g., `rotate 7`, `daily`).
 - `CONFIGURABLE_VALIDATOR_BINARY_NAME` (used by the service path update logic, though not directly configurable via prompt in this script version).
 
