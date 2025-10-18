@@ -422,6 +422,82 @@ EOF
     echo -e "${YELLOW}Note: Using 'postrotate' with USR1 signal. If ${VALIDATOR_SERVICE_NAME} does not support this, use 'copytruncate' instead and comment out the 'postrotate' block.${NC}"
 }
 
+create_validator_service_file() {
+    log_msg "Creating new validator systemd service file..."
+    local service_name="${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
+    local service_file_path="/etc/systemd/system/${service_name}"
+    local validator_user="${CONFIGURABLE_VALIDATOR_LOG_DIR_USER}"
+    local active_release_path
+    active_release_path=$(eval echo "${CONFIGURABLE_ACTIVE_RELEASE_PATH}")
+    local validator_script="${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
+    local validator_script_expanded
+    validator_script_expanded=$(eval echo "${validator_script}")
+    
+    # Generate service file content
+    local service_content
+    read -r -d '' service_content <<EOF || true
+[Unit]
+Description=Solana Validator
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=${validator_user}
+LimitNOFILE=1000000
+LogRateLimitIntervalSec=0
+Environment="PATH=/bin:/usr/bin:${active_release_path}"
+ExecStart=${validator_script_expanded}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo -e "${CYAN_BOLD}=== Generated Service File Contents ===${NC}"
+    echo -e "${YELLOW}File: ${service_file_path}${NC}"
+    echo ""
+    echo "${service_content}"
+    echo ""
+    echo -e "${CYAN_BOLD}=======================================${NC}"
+    echo ""
+    
+    if ! confirm_action "Create this systemd service file at ${service_file_path}?"; then
+        log_msg "Service file creation cancelled."
+        return 1
+    fi
+    
+    # Write the service file
+    echo "${service_content}" | sudo tee "${service_file_path}" > /dev/null
+    
+    if [ $? -eq 0 ]; then
+        log_msg "${GREEN}Service file created successfully at ${service_file_path}${NC}"
+        
+        # Set proper permissions
+        sudo chmod 644 "${service_file_path}"
+        
+        # Reload systemd
+        log_msg "Reloading systemd daemon..."
+        sudo systemctl daemon-reload
+        
+        # Ask if user wants to enable the service
+        if confirm_action "Enable ${service_name} to start on boot?"; then
+            sudo systemctl enable "${service_name}"
+            log_msg "${GREEN}Service ${service_name} enabled.${NC}"
+        else
+            log_msg "Service not enabled. You can enable it later with: sudo systemctl enable ${service_name}"
+        fi
+        
+        log_msg "${GREEN}Service file setup complete.${NC}"
+        echo -e "${YELLOW}Note: Make sure ${validator_script_expanded} exists and is executable before starting the service.${NC}"
+        return 0
+    else
+        log_msg "${RED}ERROR: Failed to create service file at ${service_file_path}${NC}"
+        return 1
+    fi
+}
+
 update_validator_service_environment_path() {
     log_msg "Checking validator systemd service for old PATH environment..."
     local service_name="${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
@@ -432,9 +508,15 @@ update_validator_service_environment_path() {
     new_path_segment_expanded=$(eval echo "${new_path_segment_configurable}") # Expand $HOME if present
 
     if [ ! -f "${service_file_path}" ]; then
-        log_msg "${YELLOW}Validator service file ${service_file_path} not found. Skipping PATH update for service.${NC}"
-        log_msg "${YELLOW}If you have a service file at a different location, please update it manually if needed.${NC}"
-        return
+        log_msg "${YELLOW}Validator service file ${service_file_path} not found.${NC}"
+        
+        if confirm_action "Would you like to create a new systemd service file for the validator?"; then
+            create_validator_service_file
+            return
+        else
+            log_msg "${YELLOW}Skipping service file creation. You can create it manually later if needed.${NC}"
+            return
+        fi
     fi
 
     log_msg "Found service file: ${service_file_path}"
@@ -461,6 +543,21 @@ update_validator_service_environment_path() {
         new_env_path_line="Environment=\"PATH=${new_path_value}\"" 
 
         log_msg "Proposed new Environment PATH line: ${new_env_path_line}"
+        
+        # Display current service file contents
+        echo ""
+        echo -e "${CYAN_BOLD}=== Current Service File Contents ===${NC}"
+        echo -e "${YELLOW}File: ${service_file_path}${NC}"
+        echo ""
+        cat "${service_file_path}"
+        echo ""
+        echo -e "${CYAN_BOLD}====================================${NC}"
+        echo ""
+        echo -e "${YELLOW}The following line will be changed:${NC}"
+        echo -e "${RED}OLD: ${current_env_path_line}${NC}"
+        echo -e "${GREEN}NEW: ${new_env_path_line}${NC}"
+        echo ""
+        
         if confirm_action "Update the Environment PATH in ${service_file_path}?"; then
             sudo cp "${service_file_path}" "${service_file_path}.bak_$(date +%Y%m%d%H%M%S)"
             log_msg "Backed up ${service_file_path} to ${service_file_path}.bak_..."

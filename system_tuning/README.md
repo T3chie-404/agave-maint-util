@@ -48,6 +48,14 @@ The primary goal of this script is to automate common setup tasks, including:
     - **Security Limits:** Creates `/etc/security/limits.d/90-solana-nofiles.conf` to increase the open file descriptor limit for user sessions.
 - **Logrotate Setup:**
     - Creates a logrotate configuration file for the validator's log file.
+- **Systemd Service Management:**
+    - **Creates new service files** if they don't exist (with user confirmation)
+    - Displays the complete contents before creation
+    - **Updates existing service files** by replacing old PATH segments
+    - Shows current file contents and proposed changes before updating
+    - Creates backup files before modifications
+    - Automatically reloads systemd after changes
+    - Optionally enables service on boot
     - Creates the log directory if it doesn't exist and attempts to set ownership to the configured user.
     - Defaults to using `postrotate` with `systemctl kill -s USR1` for log reopening.
 - **Validator Script/Service Path Alignment:**
