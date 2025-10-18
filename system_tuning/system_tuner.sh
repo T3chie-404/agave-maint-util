@@ -635,7 +635,7 @@ if [ -n "${user_old_service_path}" ]; then OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="
 log_msg "Will look for old path segment: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE} in service file PATH."
 
 
-if confirm_action "Configure persistent PATH for '${CONFIGURABLE_ACTIVE_RELEASE_PATH}' in ~/.bashrc?"; then
+if confirm_action "Configure persistent PATH for '${CONFIGURABLE_ACTIVE_RELEASE_PATH}' in ${DETECTED_RC_FILE}?"; then
     configure_active_release_path
 fi
 
