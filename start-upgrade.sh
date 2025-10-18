@@ -49,7 +49,7 @@ ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release"
 #            Also, ensure your user's shell RC file (~/.bashrc or ~/.zshrc, configured by the system tuning script)
 #            points to this ACTIVE_RELEASE_SYMLINK for interactive use.
 
-LEDGER_DIR="$HOME/ledger" 
+LEDGER_DIR="/mnt/ledger"  # Default ledger location - will be prompted during upgrade
 BUILD_JOBS=2 
 VALIDATOR_BINARY_NAME="agave-validator" 
 
@@ -869,6 +869,25 @@ if [ -n "${input_max_delinquent}" ]; then user_max_delinquent_stake="${input_max
 
 read -r -p "Enter min idle time (seconds) for restart [default: ${DEFAULT_MIN_IDLE_TIME}]: " input_min_idle
 if [ -n "${input_min_idle}" ]; then user_min_idle_time="${input_min_idle}"; fi
+
+# Prompt for ledger directory
+echo ""
+echo -e "${YELLOW}Current ledger directory: ${LEDGER_DIR}${NC}"
+read -r -p "Enter ledger directory path [default: ${LEDGER_DIR}]: " input_ledger_dir
+if [ -n "${input_ledger_dir}" ]; then 
+    LEDGER_DIR="${input_ledger_dir}"
+    echo -e "${GREEN}Using ledger directory: ${LEDGER_DIR}${NC}"
+fi
+
+# Verify ledger directory exists
+if [ ! -d "${LEDGER_DIR}" ]; then
+    echo -e "${RED}WARNING: Ledger directory ${LEDGER_DIR} does not exist!${NC}"
+    read -r -p "Continue anyway? (yes/no): " continue_without_ledger
+    if [[ "${continue_without_ledger,,}" != "yes" && "${continue_without_ledger,,}" != "y" ]]; then
+        echo -e "${RED}Aborting upgrade. Please verify ledger path.${NC}"
+        exit 1
+    fi
+fi
 
 # Check if --no-wait-for-exit flag is supported
 echo -e "${CYAN}Checking validator exit command syntax...${NC}"
