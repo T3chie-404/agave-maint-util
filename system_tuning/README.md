@@ -61,7 +61,9 @@ The primary goal of this script is to automate common setup tasks, including:
         - `tail_logs.sh` - Tail the validator log file
         - `mon.sh` - Monitor validator using agave-validator monitor
         - `catchup.sh` - Check validator catchup status
+        - `exit-validator.sh` - Gracefully exit validator (takes snapshot before shutdown)
     - All scripts are executable and use paths configured during setup
+    - `exit-validator.sh` is automatically regenerated after each upgrade with version-appropriate flags
     - Creates the log directory if it doesn't exist and attempts to set ownership to the configured user.
     - Defaults to using `postrotate` with `systemctl kill -s USR1` for log reopening.
 - **Validator Script/Service Path Alignment:**

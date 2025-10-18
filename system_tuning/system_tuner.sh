@@ -523,6 +523,9 @@ create_convenience_scripts() {
     echo -e "${GREEN}3. catchup.sh${NC} - Check validator catchup status"
     echo "   solana catchup --our-localhost"
     echo ""
+    echo -e "${GREEN}4. exit-validator.sh${NC} - Gracefully exit validator (takes snapshot)"
+    echo "   agave-validator --ledger ${ledger_path_expanded} exit --max-delinquent-stake 10 --min-idle-time 0 --monitor"
+    echo ""
     echo -e "${CYAN_BOLD}=====================================${NC}"
     echo ""
     
@@ -564,12 +567,25 @@ EOF
     chmod +x "$HOME/catchup.sh"
     log_msg "${GREEN}Created: $HOME/catchup.sh${NC}"
     
+    # Create exit-validator.sh
+    cat > "$HOME/exit-validator.sh" <<EOF
+#!/usr/bin/env bash
+# Gracefully exit validator (takes snapshot before shutdown)
+# Service will auto-restart if configured
+# Created by system_tuner.sh on $(date)
+
+agave-validator --ledger ${ledger_path_expanded} exit --max-delinquent-stake 10 --min-idle-time 0 --no-wait-for-exit --monitor
+EOF
+    chmod +x "$HOME/exit-validator.sh"
+    log_msg "${GREEN}Created: $HOME/exit-validator.sh${NC}"
+    
     echo ""
     log_msg "${GREEN}Convenience scripts created successfully!${NC}"
     echo -e "${YELLOW}Usage:${NC}"
-    echo "  ~/tail_logs.sh  - Tail validator logs"
-    echo "  ~/mon.sh        - Monitor validator"
-    echo "  ~/catchup.sh    - Check catchup status"
+    echo "  ~/tail_logs.sh      - Tail validator logs"
+    echo "  ~/mon.sh            - Monitor validator"
+    echo "  ~/catchup.sh        - Check catchup status"
+    echo "  ~/exit-validator.sh - Gracefully exit validator"
     echo ""
 }
 

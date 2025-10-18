@@ -36,6 +36,11 @@ This script automates the process of upgrading, rolling back, or cleaning old co
 * **Interactive Prompts:**
     * Includes prompts for user confirmation at critical steps.
     * Allows exiting the script gracefully (with an 'x' option) before a validator restart or at the very end of the script.
+* **Version-Aware Exit Command:**
+    * Automatically detects validator version capabilities by checking exit command help output.
+    * Dynamically includes `--no-wait-for-exit` flag only when supported by the validator version.
+    * Regenerates `~/exit-validator.sh` convenience script after each upgrade with correct syntax.
+    * Ensures backward compatibility with older validator versions.
 * **Colored Output:** Uses colors for better readability of messages.
 * **Error Handling:** Includes `set -euo pipefail` for robust error handling.
 
