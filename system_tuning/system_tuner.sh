@@ -88,7 +88,12 @@ get_rc_file_for_shell() {
     local shell_type="$1"
     case "$shell_type" in
         zsh)
-            echo "$HOME/.zshrc"
+            # Smart detection for zsh: prefer .zshenv if it has PATH configs
+            if [ -f "$HOME/.zshenv" ] && grep -q "PATH" "$HOME/.zshenv" 2>/dev/null; then
+                echo "$HOME/.zshenv"
+            else
+                echo "$HOME/.zshrc"
+            fi
             ;;
         bash|*)
             echo "$HOME/.bashrc"

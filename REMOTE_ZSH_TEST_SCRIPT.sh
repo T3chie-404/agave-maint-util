@@ -65,13 +65,18 @@ else
 fi
 echo ""
 
-# Test 3: RC File Selection
-echo "=== Test 3: RC File Selection ==="
+# Test 3: RC File Selection (with smart detection)
+echo "=== Test 3: RC File Selection (Smart Detection) ==="
 get_rc_file_for_shell() {
     local shell_type="$1"
     case "$shell_type" in
         zsh)
-            echo "$HOME/.zshrc"
+            # Smart detection for zsh: prefer .zshenv if it has PATH configs
+            if [ -f "$HOME/.zshenv" ] && grep -q "PATH" "$HOME/.zshenv" 2>/dev/null; then
+                echo "$HOME/.zshenv"
+            else
+                echo "$HOME/.zshrc"
+            fi
             ;;
         bash|*)
             echo "$HOME/.bashrc"
@@ -79,11 +84,25 @@ get_rc_file_for_shell() {
     esac
 }
 
+# Check what exists
+if [ -f "$HOME/.zshenv" ]; then
+    echo "Found .zshenv:"
+    if grep -q "PATH" "$HOME/.zshenv" 2>/dev/null; then
+        echo "  ✓ Contains PATH configurations"
+    else
+        echo "  ⊘ No PATH configurations"
+    fi
+fi
+
 RC_FILE=$(get_rc_file_for_shell "$DETECTED_SHELL")
 echo "Selected RC file: $RC_FILE"
 
-if [ "$DETECTED_SHELL" = "zsh" ] && [ "$RC_FILE" = "$HOME/.zshrc" ]; then
-    echo "✓ PASS: Correctly selected .zshrc for zsh"
+if [ "$DETECTED_SHELL" = "zsh" ]; then
+    if [ -f "$HOME/.zshenv" ] && grep -q "PATH" "$HOME/.zshenv" 2>/dev/null; then
+        [ "$RC_FILE" = "$HOME/.zshenv" ] && echo "✓ PASS: Correctly selected .zshenv (has PATH configs)" || echo "✗ FAIL: Should have selected .zshenv"
+    else
+        [ "$RC_FILE" = "$HOME/.zshrc" ] && echo "✓ PASS: Correctly selected .zshrc (no .zshenv PATH)" || echo "✗ FAIL: Should have selected .zshrc"
+    fi
 elif [ "$DETECTED_SHELL" = "bash" ] && [ "$RC_FILE" = "$HOME/.bashrc" ]; then
     echo "✓ PASS: Correctly selected .bashrc for bash"
 else
