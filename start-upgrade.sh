@@ -46,7 +46,7 @@ ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release"
 #            ensure your systemd service file (e.g., /etc/systemd/system/validator.service)
 #            points to the correct path for the agave-validator binary,
 #            either directly or by having ACTIVE_RELEASE_SYMLINK in its PATH.
-#            Also, ensure your user's ~/.bashrc (configured by the system tuning script)
+#            Also, ensure your user's shell RC file (~/.bashrc or ~/.zshrc, configured by the system tuning script)
 #            points to this ACTIVE_RELEASE_SYMLINK for interactive use.
 
 LEDGER_DIR="$HOME/ledger" 
@@ -61,6 +61,63 @@ DEFAULT_MIN_IDLE_TIME=5
 # ##############################################################################
 # #                                                                            #
 # ##############################################################################
+
+# --- Shell Detection Functions ---
+
+# Detect the user's default shell (bash or zsh)
+detect_user_shell() {
+    local user_shell
+    local shell_basename
+    
+    # Try to get shell from user database first
+    user_shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)
+    
+    # Fallback to SHELL environment variable
+    if [ -z "$user_shell" ] || [ "$user_shell" = "/sbin/nologin" ]; then
+        user_shell="${SHELL:-/bin/bash}"
+    fi
+    
+    # Extract basename and determine type
+    shell_basename=$(basename "$user_shell")
+    case "$shell_basename" in
+        zsh)
+            echo "zsh"
+            ;;
+        bash)
+            echo "bash"
+            ;;
+        *)
+            # Default to bash for unknown shells
+            echo "bash"
+            ;;
+    esac
+}
+
+# Get appropriate RC file path for the detected shell
+get_rc_file_for_shell() {
+    local shell_type="$1"
+    case "$shell_type" in
+        zsh)
+            echo "$HOME/.zshrc"
+            ;;
+        bash|*)
+            echo "$HOME/.bashrc"
+            ;;
+    esac
+}
+
+# Get appropriate shell name for display
+get_shell_display_name() {
+    local shell_type="$1"
+    case "$shell_type" in
+        zsh)
+            echo "Zsh"
+            ;;
+        bash|*)
+            echo "Bash"
+            ;;
+    esac
+}
 
 # --- Helper: Get Active Version Directory Name ---
 get_active_version_dir_name() {
@@ -247,8 +304,12 @@ perform_rollback() {
           "${VALIDATOR_BINARY_NAME}" -V
           echo -e "${GREEN}Secondary verification successful: '${VALIDATOR_BINARY_NAME}' found in system PATH.${NC}"
       else
+          local detected_shell_type
+          detected_shell_type=$(detect_user_shell)
+          local detected_rc_file
+          detected_rc_file=$(get_rc_file_for_shell "$detected_shell_type")
           echo -e "${YELLOW}WARNING: Command '${VALIDATOR_BINARY_NAME}' not found in system PATH when run from $(pwd).${NC}"
-          echo -e "${YELLOW}Ensure '${ACTIVE_RELEASE_SYMLINK}' is permanently in your system PATH (e.g., via ~/.bashrc and a new terminal session).${NC}"
+          echo -e "${YELLOW}Ensure '${ACTIVE_RELEASE_SYMLINK}' is permanently in your system PATH (e.g., via ${detected_rc_file} and a new terminal session).${NC}"
       fi
       cd "${current_dir_before_cd_test}" 
     )
@@ -711,8 +772,12 @@ echo -e "${GREEN}\nPerforming secondary verification (from home directory using 
       "${VALIDATOR_BINARY_NAME}" -V
       echo -e "${GREEN}Secondary verification successful: '${VALIDATOR_BINARY_NAME}' found in system PATH.${NC}"
   else
+      local detected_shell_type
+      detected_shell_type=$(detect_user_shell)
+      local detected_rc_file
+      detected_rc_file=$(get_rc_file_for_shell "$detected_shell_type")
       echo -e "${YELLOW}WARNING: Command '${VALIDATOR_BINARY_NAME}' not found in system PATH when run from $(pwd).${NC}"
-      echo -e "${YELLOW}Ensure '${ACTIVE_RELEASE_SYMLINK}' is permanently in your system PATH (e.g., via ~/.bashrc and a new terminal session).${NC}"
+      echo -e "${YELLOW}Ensure '${ACTIVE_RELEASE_SYMLINK}' is permanently in your system PATH (e.g., via ${detected_rc_file} and a new terminal session).${NC}"
   fi
   cd "${current_dir_before_cd_test}" 
 )

@@ -39,9 +39,23 @@ This script automates the process of upgrading, rolling back, or cleaning old co
 * **Colored Output:** Uses colors for better readability of messages.
 * **Error Handling:** Includes `set -euo pipefail` for robust error handling.
 
+## Shell Compatibility
+
+**These scripts support both Bash and Zsh shells!**
+
+* The scripts execute in Bash (`#!/bin/bash` shebang)
+* Shell detection automatically identifies your default shell (bash or zsh)
+* PATH configurations are written to the appropriate RC file:
+  * Bash users: `~/.bashrc`
+  * Zsh users: `~/.zshrc`
+* All PATH operations, symlinks, and environment setups work identically in both shells
+* Seamlessly switch between shells without reconfiguration
+
+See `ZSH_SUPPORT_ANALYSIS.md` and `ZSH_TESTING_GUIDE.md` for detailed compatibility information and testing procedures.
+
 ## Prerequisites
 
-1.  **Bash Shell:** The script is written for Bash.
+1.  **Shell:** The scripts are written for Bash but support both Bash and Zsh user environments.
 2.  **Git:** Required for fetching source code, cloning, and checking out versions.
 3.  **Rust and Cargo:** Required for building the validator client from source. (Assumed to be pre-installed, e.g., by a separate system tuning script).
 4.  **Build Tools & Dependencies:** `rsync`, `mkdir`, `rm`, `ln`, `mv`, `du`, `find`, `awk`, `sort`, and common build essentials (like `libssl-dev`, `pkg-config`, etc., typically handled by a system setup script).
@@ -140,7 +154,7 @@ This command will:
 ## Important Notes
 
 * **Run as Correct User:** Ensure this script is run by the user intended to own the source code and compiled binaries (e.g., `solval`). This user will also need `sudo` privileges for creating the source directory if it doesn't exist.
-* **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc`, typically handled by a separate system tuning script).
+* **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc` or `~/.zshrc`, typically handled by the system tuning script which automatically detects your shell).
 * **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
 * **Error Handling:** Uses `set -euo pipefail`.
 * **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. A fallback to `cargo build --release` is provided with a warning if the script is not found.

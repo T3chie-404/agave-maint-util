@@ -2,17 +2,30 @@
 
 This script is designed to perform initial system configuration and install necessary dependencies on a new Ubuntu server to prepare it for building and running a Solana (or Agave-based) validator.
 
+## Shell Compatibility
+
+**This script supports both Bash and Zsh shells!**
+
+* Automatically detects your default shell (bash or zsh)
+* Configures the appropriate RC file:
+  * Bash users: Updates `~/.bashrc`
+  * Zsh users: Updates `~/.zshrc`
+* Creates RC files if they don't exist
+* Works seamlessly regardless of which shell you use
+* All configurations work identically in both shell environments
+
 ## Purpose
 
 The primary goal of this script is to automate common setup tasks, including:
-- Installation of Rust and its components for the user running the script.
-- Installation of essential APT packages required for building the validator from source.
-- Configuration of persistent `PATH` environment variables for user convenience.
-- Application of recommended kernel (`sysctl`) tunings for performance.
-- Configuration of system-wide (`systemd`) and user-session (`security/limits`) open file descriptor limits.
-- Setup of log rotation for the validator's log file.
-- Checking and optionally updating the `--log` path in a specified validator start script to match the logrotate configuration.
-- Checking and optionally updating the `Environment="PATH=..."` line in a specified systemd service file if an old `active_release` path is found.
+- **Shell-aware Configuration:** Detects user's shell and configures the correct RC file (`.bashrc` or `.zshrc`)
+- Installation of Rust and its components for the user running the script
+- Installation of essential APT packages required for building the validator from source
+- Configuration of persistent `PATH` environment variables for user convenience
+- Application of recommended kernel (`sysctl`) tunings for performance
+- Configuration of system-wide (`systemd`) and user-session (`security/limits`) open file descriptor limits
+- Setup of log rotation for the validator's log file
+- Checking and optionally updating the `--log` path in a specified validator start script to match the logrotate configuration
+- Checking and optionally updating the `Environment="PATH=..."` line in a specified systemd service file if an old `active_release` path is found
 
 **This script should typically be run once on a new server by the user who will be managing/running the validator (e.g., `solval`), and this user must have `sudo` privileges for system-wide changes.**
 
@@ -24,9 +37,11 @@ The primary goal of this script is to automate common setup tasks, including:
     - **Rust:** Checks for Rust (via `cargo` and `rustup`). If not found, offers to install it using the official `rustup.rs` script into the current user's `$HOME`. Adds `rustfmt` component and runs `rustup update`.
     - **APT Packages:** Checks for a predefined list of essential build dependencies (e.g., `libssl-dev`, `llvm`, `clang`, `git`, `curl`, `protobuf-compiler`, `bc`, `jq`, `sed`, `gawk`) and offers to install any missing ones.
 - **PATH Configuration:**
-    - Configures the current user's `~/.bashrc` to include `$HOME/.cargo/bin` in the `PATH` for Rust tools.
-    - Configures the current user's `~/.bashrc` to include the configured `active_release` path (e.g., `$HOME/data/compiled/active_release`) in the `PATH`.
-    - Warns if other active `active_release` paths are detected in `~/.bashrc`.
+    - Automatically detects user's shell (Bash or Zsh)
+    - Configures the appropriate RC file (`~/.bashrc` for Bash, `~/.zshrc` for Zsh`) to include `$HOME/.cargo/bin` in the `PATH` for Rust tools
+    - Configures the appropriate RC file to include the configured `active_release` path (e.g., `$HOME/data/compiled/active_release`) in the `PATH`
+    - Creates RC file if it doesn't exist
+    - Warns if other active `active_release` paths are detected in the RC file
 - **System Tuning:**
     - **Sysctl:** Applies kernel parameter tunings by creating `/etc/sysctl.d/21-agave-validator.conf`.
     - **Systemd Limits:** Configures `DefaultLimitNOFILE` in `/etc/systemd/system.conf`.
@@ -93,10 +108,11 @@ Other internal defaults that can be modified by editing the script:
 ## Important Notes
 
 * **Run Once:** This script is generally intended to be run once on a new server for a specific user.
+* **Shell Support:** The script automatically detects whether you use Bash or Zsh and configures the appropriate RC file. No manual configuration needed!
 * **Reboot:** Some changes (systemd limits, kernel parameters if they were modified via GRUB - though this script uses `sysctl`) might require a system reboot to take full effect.
-* **Source `~/.bashrc`:** For `PATH` changes made to `~/.bashrc` to apply to your current interactive terminal session, you need to run `source ~/.bashrc` or open a new terminal session after the script completes.
-* **User Context:** The script modifies `$HOME/.bashrc` for the user *executing* the script.
-* **Review Output:** Carefully review the script's output and any log messages for errors or warnings.
+* **Source RC File:** For `PATH` changes to apply to your current interactive terminal session, run `source ~/.bashrc` (for Bash) or `source ~/.zshrc` (for Zsh), or open a new terminal session after the script completes.
+* **User Context:** The script modifies the appropriate RC file (`~/.bashrc` or `~/.zshrc`) for the user *executing* the script, based on shell detection.
+* **Review Output:** Carefully review the script's output and any log messages for errors or warnings. The script will clearly indicate which shell it detected and which RC file it's configuring.
 * **Backup of Modified Files:** The script attempts to back up `/etc/systemd/system.conf` and the validator start script before modifying them.
 
 This script provides a solid foundation for preparing a server for a Solana validator. Always understand what a script does before running it, especially one that makes system-level changes.

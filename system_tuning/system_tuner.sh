@@ -52,6 +52,64 @@ CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="$HOME/validator-start.sh"
 # #                                                                            #
 # ##############################################################################
 
+# --- Shell Detection Functions ---
+
+# Detect the user's default shell (bash or zsh)
+detect_user_shell() {
+    local user_shell
+    local shell_basename
+    
+    # Try to get shell from user database first
+    user_shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)
+    
+    # Fallback to SHELL environment variable
+    if [ -z "$user_shell" ] || [ "$user_shell" = "/sbin/nologin" ]; then
+        user_shell="${SHELL:-/bin/bash}"
+    fi
+    
+    # Extract basename and determine type
+    shell_basename=$(basename "$user_shell")
+    case "$shell_basename" in
+        zsh)
+            echo "zsh"
+            ;;
+        bash)
+            echo "bash"
+            ;;
+        *)
+            # Default to bash for unknown shells
+            echo "bash"
+            ;;
+    esac
+}
+
+# Get appropriate RC file path for the detected shell
+get_rc_file_for_shell() {
+    local shell_type="$1"
+    case "$shell_type" in
+        zsh)
+            echo "$HOME/.zshrc"
+            ;;
+        bash|*)
+            echo "$HOME/.bashrc"
+            ;;
+    esac
+}
+
+# Get appropriate shell name for display
+get_shell_display_name() {
+    local shell_type="$1"
+    case "$shell_type" in
+        zsh)
+            echo "Zsh"
+            ;;
+        bash|*)
+            echo "Bash"
+            ;;
+    esac
+}
+
+# --- Utility Functions ---
 
 log_msg() {
     echo -e "${CYAN_BOLD}$(date +'%a %b %d %H:%M:%S %Z %Y') - $1${NC}" # Using CYAN_BOLD
@@ -77,56 +135,90 @@ confirm_action() {
 
 configure_active_release_path() {
     log_msg "Configuring persistent PATH for active_release symlink..."
+    
+    # Detect user's shell
+    local user_shell_type
+    user_shell_type=$(detect_user_shell)
+    local shell_display_name
+    shell_display_name=$(get_shell_display_name "$user_shell_type")
+    local rc_file
+    rc_file=$(get_rc_file_for_shell "$user_shell_type")
+    
+    log_msg "Detected shell: ${GREEN}${shell_display_name}${NC} (will configure ${rc_file})"
+    
     local active_release_path_to_add="${CONFIGURABLE_ACTIVE_RELEASE_PATH}" 
-    local bashrc_file="$HOME/.bashrc" 
     
     # Expand $HOME in the path to add for accurate comparison and writing
     local expanded_active_release_path_to_add
     expanded_active_release_path_to_add=$(eval echo "${active_release_path_to_add}")
     local new_path_line_literal="export PATH=\"${expanded_active_release_path_to_add}:\$PATH\""
 
-    if [ ! -f "${bashrc_file}" ]; then
-        log_msg "${RED}ERROR: ${bashrc_file} not found for user $(whoami). Cannot make PATH modification persistent.${NC}"
-        return 1
+    # Create RC file if it doesn't exist
+    if [ ! -f "${rc_file}" ]; then
+        log_msg "${YELLOW}${rc_file} not found for user $(whoami). Creating it...${NC}"
+        touch "${rc_file}"
+        if [ $? -ne 0 ]; then
+            log_msg "${RED}ERROR: Failed to create ${rc_file}. Cannot make PATH modification persistent.${NC}"
+            return 1
+        fi
+        log_msg "${GREEN}Created ${rc_file}${NC}"
     fi
 
     # Check if the exact new path line already exists and is NOT commented out
-    if grep -qFx -- "${new_path_line_literal}" "${bashrc_file}" && \
-       grep -Fx -- "${new_path_line_literal}" "${bashrc_file}" | grep -qvE -- "^[[:space:]]*#"; then
-        log_msg "${GREEN}'${expanded_active_release_path_to_add}' (exact match) already actively configured in PATH in ${bashrc_file}.${NC}"
+    if grep -qFx -- "${new_path_line_literal}" "${rc_file}" && \
+       grep -Fx -- "${new_path_line_literal}" "${rc_file}" | grep -qvE -- "^[[:space:]]*#"; then
+        log_msg "${GREEN}'${expanded_active_release_path_to_add}' (exact match) already actively configured in PATH in ${rc_file}.${NC}"
     else
         local generic_active_release_pattern="export PATH=\"[^\"]*/active_release:\$PATH\""
-        mapfile -t existing_active_lines < <(grep -E -- "${generic_active_release_pattern}" "${bashrc_file}" | grep -vE -- "^[[:space:]]*#" | grep -vF -- "${new_path_line_literal}")
+        
+        # Use array building method compatible with both bash and zsh
+        local existing_active_lines=()
+        while IFS= read -r line; do
+            existing_active_lines+=("$line")
+        done < <(grep -E -- "${generic_active_release_pattern}" "${rc_file}" | grep -vE -- "^[[:space:]]*#" | grep -vF -- "${new_path_line_literal}")
 
         if [ ${#existing_active_lines[@]} -gt 0 ]; then
-            log_msg "${YELLOW_BOLD}WARNING: Found OTHER existing ACTIVE line(s) in ${bashrc_file} that appear to set an 'active_release' PATH (different from the one being configured):${NC}"
+            log_msg "${YELLOW_BOLD}WARNING: Found OTHER existing ACTIVE line(s) in ${rc_file} that appear to set an 'active_release' PATH (different from the one being configured):${NC}"
             for found_line in "${existing_active_lines[@]}"; do
                 local line_num
-                line_num=$(grep -nF -- "${found_line}" "${bashrc_file}" | head -n1 | cut -d: -f1)
+                line_num=$(grep -nF -- "${found_line}" "${rc_file}" | head -n1 | cut -d: -f1)
                 log_msg "${YELLOW}  L${line_num}: ${found_line}${NC}"
             done
-            log_msg "${YELLOW}It is highly recommended to manually review ${bashrc_file} and remove old/conflicting 'active_release' PATH entries to avoid unexpected behavior.${NC}" 
+            log_msg "${YELLOW}It is highly recommended to manually review ${rc_file} and remove old/conflicting 'active_release' PATH entries to avoid unexpected behavior.${NC}" 
         fi
         
-        if ! grep -qFx -- "${new_path_line_literal}" "${bashrc_file}"; then
-             log_msg "Adding new PATH line for '${expanded_active_release_path_to_add}' to ${bashrc_file}..."
-             echo '' >> "${bashrc_file}" 
-             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${bashrc_file}"
-             echo "${new_path_line_literal}" >> "${bashrc_file}"
-             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${bashrc_file}.${NC}"
-        elif grep -qFx -- "#${new_path_line_literal}" "${bashrc_file}"; then
+        if ! grep -qFx -- "${new_path_line_literal}" "${rc_file}"; then
+             log_msg "Adding new PATH line for '${expanded_active_release_path_to_add}' to ${rc_file}..."
+             echo '' >> "${rc_file}" 
+             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${rc_file}"
+             echo "${new_path_line_literal}" >> "${rc_file}"
+             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${rc_file}.${NC}"
+        elif grep -qFx -- "#${new_path_line_literal}" "${rc_file}"; then
              log_msg "Found a commented-out version of the target PATH line. Will add a new active one."
-             echo '' >> "${bashrc_file}" 
-             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${bashrc_file}"
-             echo "${new_path_line_literal}" >> "${bashrc_file}"
-             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${bashrc_file}.${NC}"
+             echo '' >> "${rc_file}" 
+             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${rc_file}"
+             echo "${new_path_line_literal}" >> "${rc_file}"
+             log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${rc_file}.${NC}"
         fi
-        echo -e "${YELLOW}Please run 'source ~/.bashrc' or open a new terminal for this PATH change to take full effect in your interactive session.${NC}"
+        
+        # Provide shell-specific instructions
+        local rc_file_basename
+        rc_file_basename=$(basename "${rc_file}")
+        echo -e "${YELLOW}Please run 'source ~/${rc_file_basename}' or open a new terminal for this PATH change to take full effect in your interactive session.${NC}"
     fi
 }
 
 install_rust_and_components() {
     log_msg "Checking for Rust installation for user $(whoami)..."
+    
+    # Detect user's shell for proper RC file configuration
+    local user_shell_type
+    user_shell_type=$(detect_user_shell)
+    local shell_display_name
+    shell_display_name=$(get_shell_display_name "$user_shell_type")
+    local rc_file
+    rc_file=$(get_rc_file_for_shell "$user_shell_type")
+    
     if ! command -v cargo &> /dev/null && [ -f "$HOME/.cargo/env" ]; then
         log_msg "Cargo not in PATH, attempting to source $HOME/.cargo/env for this session..."
         source "$HOME/.cargo/env"
@@ -141,17 +233,23 @@ install_rust_and_components() {
                 source "$HOME/.cargo/env" 
                 log_msg "${GREEN}Rust installed for $(whoami). Sourced $HOME/.cargo/env for current script session.${NC}"
                 
-                log_msg "Adding 'source \"\$HOME/.cargo/env\"' to $HOME/.bashrc for persistence..."
-                if ! grep -qF 'source "$HOME/.cargo/env"' "$HOME/.bashrc"; then 
-                    echo '' >> "$HOME/.bashrc" 
-                    echo '# Rust/Cargo PATH setup (managed by system_tuning_setup.sh)' >> "$HOME/.bashrc"
-                    echo 'source "$HOME/.cargo/env"' >> "$HOME/.bashrc"
-                    log_msg "Added Rust source line to $HOME/.bashrc."
-                else
-                    log_msg "Rust source line already exists in $HOME/.bashrc."
+                # Create RC file if it doesn't exist
+                if [ ! -f "${rc_file}" ]; then
+                    log_msg "${YELLOW}${rc_file} not found. Creating it...${NC}"
+                    touch "${rc_file}"
                 fi
                 
-                log_msg "${GREEN}Rust PATH configured in $HOME/.bashrc for future sessions.${NC}"
+                log_msg "Adding 'source \"\$HOME/.cargo/env\"' to ${rc_file} for persistence..."
+                if ! grep -qF 'source "$HOME/.cargo/env"' "${rc_file}"; then 
+                    echo '' >> "${rc_file}" 
+                    echo "# Rust/Cargo PATH setup (managed by system_tuning_setup.sh for ${shell_display_name})" >> "${rc_file}"
+                    echo 'source "$HOME/.cargo/env"' >> "${rc_file}"
+                    log_msg "Added Rust source line to ${rc_file}."
+                else
+                    log_msg "Rust source line already exists in ${rc_file}."
+                fi
+                
+                log_msg "${GREEN}Rust PATH configured in ${rc_file} for future ${shell_display_name} sessions.${NC}"
             else
                 log_msg "${RED}ERROR: Rust installation completed, but $HOME/.cargo/env not found. Manual PATH setup might be needed for user $(whoami).${NC}"
                 exit 1
@@ -492,9 +590,19 @@ update_validator_start_script_log_path() {
 log_msg "Starting System Tuning and Initial Setup Script..."
 log_msg "Current PATH for script: $PATH" 
 
+# Detect and display user's shell
+DETECTED_SHELL_TYPE=$(detect_user_shell)
+DETECTED_SHELL_DISPLAY=$(get_shell_display_name "$DETECTED_SHELL_TYPE")
+DETECTED_RC_FILE=$(get_rc_file_for_shell "$DETECTED_SHELL_TYPE")
+
+echo -e "\n${CYAN_BOLD}--- Shell Detection ---${NC}"
+log_msg "Detected default shell: ${GREEN}${DETECTED_SHELL_DISPLAY}${NC}"
+log_msg "Configuration file: ${GREEN}${DETECTED_RC_FILE}${NC}"
+echo ""
+
 # Prompt for user-configurable paths if they want to change defaults
-echo -e "\n${CYAN_BOLD}--- Path Configurations ---${NC}"
-echo -e "${YELLOW_BOLD}IMPORTANT: Before configuring the 'active_release' PATH, please manually check your${NC} ${YELLOW_BOLD}~/.bashrc${NC}"
+echo -e "${CYAN_BOLD}--- Path Configurations ---${NC}"
+echo -e "${YELLOW_BOLD}IMPORTANT: Before configuring the 'active_release' PATH, please manually check your ${DETECTED_RC_FILE}${NC}"
 echo -e "${YELLOW_BOLD}If you have any old 'export PATH=.../active_release:\$PATH' lines, consider removing it to avoid conflicts.${NC}"
 echo -e "${YELLOW_BOLD}This script will add a new entry for the path you specify below if it doesn't already exist in the exact form.${NC}"
 read -r -p "Enter path for 'active_release' symlink [default: ${CONFIGURABLE_ACTIVE_RELEASE_PATH}]: " user_active_release_path
@@ -560,7 +668,10 @@ fi
 
 log_msg "${GREEN}System Tuning and Initial Setup Script finished.${NC}"
 echo -e "${GREEN}Please review the output and logs. A reboot may be required for some changes (like systemd limits or kernel parameters if they were part of GRUB) to take full effect.${NC}"
-echo -e "${YELLOW}Remember to run 'source ~/.bashrc' or open a new terminal session to activate any PATH changes made to ~/.bashrc for user $(whoami).${NC}"
+
+# Provide shell-specific instructions
+RC_FILE_BASENAME=$(basename "${DETECTED_RC_FILE}")
+echo -e "${YELLOW}Remember to run 'source ~/${RC_FILE_BASENAME}' or open a new ${DETECTED_SHELL_DISPLAY} terminal session to activate any PATH changes made for user $(whoami).${NC}"
 log_msg "Final PATH for script: $PATH" 
 # Q3VzdG9taXplZCBieSBUNDNoaWUtNDA0
 exit 0
