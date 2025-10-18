@@ -56,6 +56,12 @@ The primary goal of this script is to automate common setup tasks, including:
     - Creates backup files before modifications
     - Automatically reloads systemd after changes
     - Optionally enables service on boot
+- **Convenience Scripts:**
+    - Creates helpful scripts in `$HOME` for common validator tasks:
+        - `tail_logs.sh` - Tail the validator log file
+        - `mon.sh` - Monitor validator using agave-validator monitor
+        - `catchup.sh` - Check validator catchup status
+    - All scripts are executable and use paths configured during setup
     - Creates the log directory if it doesn't exist and attempts to set ownership to the configured user.
     - Defaults to using `postrotate` with `systemctl kill -s USR1` for log reopening.
 - **Validator Script/Service Path Alignment:**

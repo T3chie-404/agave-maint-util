@@ -41,6 +41,9 @@ CONFIGURABLE_VALIDATOR_SERVICE_NAME="validator.service"
 # Name of the main validator binary
 CONFIGURABLE_VALIDATOR_BINARY_NAME="agave-validator"
 
+# Path to the validator ledger directory (for monitoring and convenience scripts)
+CONFIGURABLE_LEDGER_PATH="/mnt/ledger"
+
 # Specific old path segment to look for and replace in the validator service's PATH environment
 OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="/home/sol/.local/share/xandeum/install/releases/active_release"
 
@@ -498,6 +501,78 @@ EOF
     fi
 }
 
+create_convenience_scripts() {
+    log_msg "Setting up convenience scripts in home directory..."
+    
+    local log_file_path
+    log_file_path=$(eval echo "${CONFIGURABLE_VALIDATOR_LOG_FILE_PATH}")
+    local ledger_path="${CONFIGURABLE_LEDGER_PATH}"
+    local ledger_path_expanded
+    ledger_path_expanded=$(eval echo "${ledger_path}")
+    
+    echo ""
+    echo -e "${CYAN_BOLD}=== Convenience Scripts to Create ===${NC}"
+    echo -e "${YELLOW}Location: $HOME${NC}"
+    echo ""
+    echo -e "${GREEN}1. tail_logs.sh${NC} - Tail the validator log file"
+    echo "   tail -f ${log_file_path}"
+    echo ""
+    echo -e "${GREEN}2. mon.sh${NC} - Monitor validator with agave-validator monitor"
+    echo "   agave-validator --ledger ${ledger_path_expanded} monitor"
+    echo ""
+    echo -e "${GREEN}3. catchup.sh${NC} - Check validator catchup status"
+    echo "   solana catchup --our-localhost"
+    echo ""
+    echo -e "${CYAN_BOLD}=====================================${NC}"
+    echo ""
+    
+    if ! confirm_action "Create these convenience scripts in $HOME?"; then
+        log_msg "Skipping convenience script creation."
+        return
+    fi
+    
+    # Create tail_logs.sh
+    cat > "$HOME/tail_logs.sh" <<EOF
+#!/usr/bin/env bash
+# Tail validator log file
+# Created by system_tuner.sh on $(date)
+
+tail -f ${log_file_path}
+EOF
+    chmod +x "$HOME/tail_logs.sh"
+    log_msg "${GREEN}Created: $HOME/tail_logs.sh${NC}"
+    
+    # Create mon.sh
+    cat > "$HOME/mon.sh" <<EOF
+#!/usr/bin/env bash
+# Monitor validator using agave-validator monitor
+# Created by system_tuner.sh on $(date)
+
+agave-validator --ledger ${ledger_path_expanded} monitor
+EOF
+    chmod +x "$HOME/mon.sh"
+    log_msg "${GREEN}Created: $HOME/mon.sh${NC}"
+    
+    # Create catchup.sh
+    cat > "$HOME/catchup.sh" <<EOF
+#!/usr/bin/env bash
+# Check validator catchup status
+# Created by system_tuner.sh on $(date)
+
+solana catchup --our-localhost
+EOF
+    chmod +x "$HOME/catchup.sh"
+    log_msg "${GREEN}Created: $HOME/catchup.sh${NC}"
+    
+    echo ""
+    log_msg "${GREEN}Convenience scripts created successfully!${NC}"
+    echo -e "${YELLOW}Usage:${NC}"
+    echo "  ~/tail_logs.sh  - Tail validator logs"
+    echo "  ~/mon.sh        - Monitor validator"
+    echo "  ~/catchup.sh    - Check catchup status"
+    echo ""
+}
+
 update_validator_service_environment_path() {
     log_msg "Checking validator systemd service for old PATH environment..."
     local service_name="${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
@@ -727,6 +802,10 @@ read -r -p "Enter path to validator start script (e.g., ~/validator-start.sh) [d
 if [ -n "${user_validator_start_script}" ]; then CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="${user_validator_start_script}"; fi
 log_msg "Using validator start script path: ${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
 
+read -r -p "Enter path to validator ledger directory [default: ${CONFIGURABLE_LEDGER_PATH}]: " user_ledger_path
+if [ -n "${user_ledger_path}" ]; then CONFIGURABLE_LEDGER_PATH="${user_ledger_path}"; fi
+log_msg "Using validator ledger path: ${CONFIGURABLE_LEDGER_PATH}"
+
 read -r -p "Enter the specific OLD 'active_release' path segment to search for in the service file [default: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}]: " user_old_service_path
 if [ -n "${user_old_service_path}" ]; then OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="${user_old_service_path}"; fi
 log_msg "Will look for old path segment: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE} in service file PATH."
@@ -767,6 +846,9 @@ fi
 if confirm_action "Check/update --log path in validator start script '${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}'?"; then
     update_validator_start_script_log_path
 fi
+
+# Create convenience scripts
+create_convenience_scripts
 
 log_msg "${GREEN}System Tuning and Initial Setup Script finished.${NC}"
 echo -e "${GREEN}Please review the output and logs. A reboot may be required for some changes (like systemd limits or kernel parameters if they were part of GRUB) to take full effect.${NC}"
