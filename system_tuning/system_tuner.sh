@@ -700,13 +700,17 @@ update_validator_start_script_log_path() {
     log_msg "Last active --log line found (L${line_number_of_log_arg}): ${current_log_line}"
     local current_log_path
     current_log_path=$(echo "${current_log_line}" | sed -E 's/.*--log[[:space:]]+([^[:space:]]+).*/\1/')
-    current_log_path_expanded=$(eval echo "${current_log_path}") 
+    
+    # Try to expand the path, but don't fail if it contains undefined variables from the validator script
+    local current_log_path_expanded
+    set +u  # Temporarily allow unbound variables
+    current_log_path_expanded=$(eval echo "${current_log_path}" 2>/dev/null) || current_log_path_expanded="${current_log_path}"
+    set -u  # Re-enable unbound variable checking
 
-
-    log_msg "Current log path in script: '${current_log_path_expanded}'"
+    log_msg "Current log path in script: '${current_log_path}' (expanded: '${current_log_path_expanded}')"
     log_msg "Desired log path (from logrotate setup): '${desired_log_path}'"
 
-    if [ "${current_log_path_expanded}" == "${desired_log_path}" ]; then
+    if [ "${current_log_path_expanded}" == "${desired_log_path}" ] || [ "${current_log_path}" == "${desired_log_path}" ]; then
         log_msg "${GREEN}--log path in ${start_script_path} already matches logrotate configuration.${NC}"
     else
         log_msg "${YELLOW}The --log path in ${start_script_path} ('${current_log_path_expanded}') is DIFFERENT from the logrotate path ('${desired_log_path}').${NC}"
