@@ -605,10 +605,11 @@ echo -e "${CYAN}\n--- Initiating Upgrade Process ---${NC}"
 echo -e "${CYAN}Target ref (tag/branch) for upgrade: ${GREEN}${target_ref}${NC}"
 
 # Determine which source directory to use based on the ref
-if [[ "${target_ref}" == *"-jito" ]]; then
+# Match -jito at end OR -jito. followed by sub-version (e.g., v3.0.6-jito or v3.0.6-jito.1)
+if [[ "${target_ref}" =~ -jito($|\.[0-9]) ]]; then
     SOURCE_DIR="${JITO_SOURCE_DIR}"
     REPO_URL_TO_CLONE="${JITO_REPO_URL}"
-    echo -e "${GREEN}Ref ends with '-jito'. Using Jito source directory: ${SOURCE_DIR}${NC}"
+    echo -e "${GREEN}Ref contains '-jito' version tag. Using Jito source directory: ${SOURCE_DIR}${NC}"
 elif [[ "${target_ref}" == x* ]]; then # If ref starts with 'x', it could be Xandeum
     echo -e "${YELLOW}The provided ref '${target_ref}' starts with 'x'.${NC}"
     echo -e "${YELLOW}This might be a Xandeum-Agave client build.${NC}"
