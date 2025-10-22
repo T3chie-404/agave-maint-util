@@ -56,6 +56,10 @@ VALIDATOR_BINARY_NAME="agave-validator"
 # Default values for validator exit command
 DEFAULT_MAX_DELINQUENT_STAKE=5
 DEFAULT_MIN_IDLE_TIME=5
+
+# Set a clean target directory to avoid path issues
+export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
+
 # --- End Configuration Variables ---
 
 # ##############################################################################
@@ -732,6 +736,10 @@ export CI_COMMIT
 CI_COMMIT=$(git rev-parse HEAD)
 echo -e "${CYAN}Using CI_COMMIT=${CI_COMMIT} for the build.${NC}"
 export CARGO_BUILD_JOBS="${BUILD_JOBS}"
+
+# Ensure we're in the correct directory and set clean target
+cd "${SOURCE_DIR}"
+export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
 
 CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
