@@ -162,6 +162,6 @@ This command will:
 * **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc` or `~/.zshrc`, typically handled by the system tuning script which automatically detects your shell).
 * **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
 * **Error Handling:** Uses `set -euo pipefail`.
-* **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. A fallback to `cargo build --release` is provided with a warning if the script is not found.
+* **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. If the script returns an error but essential binaries (like `agave-validator`) were successfully built, the upgrade will continue with a warning. This handles cases where auxiliary tools like `cargo-build-sbf` may not be built in certain versions. A fallback to `cargo build --release` is provided with a warning if the script is not found.
 * **Irreversible Deletion:** The `clean` command uses `rm -rf`. Double-check selections before confirming deletion as this action is permanent.
 EOF

@@ -745,8 +745,17 @@ CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
     echo -e "${GREEN}Using ${CARGO_INSTALL_ALL_SCRIPT} for build...${NC}"
     if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then 
-        echo -e "${RED}ERROR: Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
-        exit 1
+        echo -e "${YELLOW}WARNING: ${CARGO_INSTALL_ALL_SCRIPT} returned an error. Checking if essential binaries were built...${NC}"
+        
+        # Check if agave-validator binary exists (the most critical binary)
+        if [ -f "./target/release/${VALIDATOR_BINARY_NAME}" ] || [ -f "./bin/${VALIDATOR_BINARY_NAME}" ]; then
+            echo -e "${GREEN}Essential validator binary found. Build appears successful despite script error.${NC}"
+            echo -e "${YELLOW}Note: Some auxiliary tools like cargo-build-sbf may not have been built/copied.${NC}"
+        else
+            echo -e "${RED}ERROR: Essential validator binary (${VALIDATOR_BINARY_NAME}) not found after build.${NC}"
+            echo -e "${RED}Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
+            exit 1
+        fi
     fi
 else
     echo -e "${RED}ERROR: Build script ${CARGO_INSTALL_ALL_SCRIPT} not found or not executable in ${SOURCE_DIR}/scripts/.${NC}"
