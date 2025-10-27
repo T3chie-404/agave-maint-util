@@ -817,17 +817,23 @@ echo -e "${CYAN}Creating directory for compiled version: ${COMPILED_VERSION_BIN_
 mkdir -p "${COMPILED_VERSION_BIN_DIR}" 
 
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
-BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release" 
-if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then 
-    if [ -d "${SOURCE_DIR}/bin" ]; then
-        BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
-    elif [ ! -d "${SOURCE_DIR}/target/release" ]; then 
-        echo -e "${RED}ERROR: Neither ${SOURCE_DIR}/bin nor ${SOURCE_DIR}/target/release found after build!${NC}"
-        exit 1
-    else 
-        echo -e "${YELLOW}Warning: ${SOURCE_DIR}/bin not found, attempting to rsync from ${SOURCE_DIR}/target/release instead.${NC}"
-        BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
-    fi
+
+# Determine where the build output is located
+# Priority: 1) ./bin (cargo-install-all.sh target), 2) CARGO_TARGET_DIR/release, 3) ./target/release
+BUILD_OUTPUT_DIR=""
+if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ] && [ -d "${SOURCE_DIR}/bin" ]; then
+    BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
+    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
+elif [ -n "${CARGO_TARGET_DIR}" ] && [ -d "${CARGO_TARGET_DIR}/release" ]; then
+    BUILD_OUTPUT_DIR="${CARGO_TARGET_DIR}/release"
+    echo -e "${CYAN}Using build output from custom CARGO_TARGET_DIR: ${BUILD_OUTPUT_DIR}${NC}"
+elif [ -d "${SOURCE_DIR}/target/release" ]; then
+    BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
+    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
+else
+    echo -e "${RED}ERROR: Cannot find build output directory!${NC}"
+    echo -e "${RED}Checked: ${SOURCE_DIR}/bin, ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release${NC}"
+    exit 1
 fi
 
 if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then

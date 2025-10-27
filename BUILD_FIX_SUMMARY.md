@@ -98,9 +98,26 @@ This fix addresses similar issues that may occur with:
 - Other auxiliary tools that aren't critical for validator operation
 - Upstream build script changes in different Jito/Agave versions
 
+## Additional Fixes
+
+### CARGO_TARGET_DIR Build Output Detection (lines 819-842)
+
+When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*`), the binaries are built there instead of `./target/release/`. The rsync step now intelligently finds the correct build output location:
+
+**Priority order:**
+1. `${SOURCE_DIR}/bin` - Where cargo-install-all.sh copies binaries if successful
+2. `${CARGO_TARGET_DIR}/release` - Custom target directory (used for clean builds)
+3. `${SOURCE_DIR}/target/release` - Standard Cargo build location
+
+This ensures binaries are always found and copied to the final compiled version directory, regardless of where Cargo built them.
+
+### Cargo Clean (lines 734-741)
+
+Added `cargo clean` before each build to remove cached artifacts and ensure fresh compilation. This prevents issues where cached artifacts from previous versions could be incorrectly reused.
+
 ## Files Modified
 
-- `start-upgrade.sh` (lines 753-772, plus cargo clean addition at lines 734-741)
+- `start-upgrade.sh` (lines 734-741, 753-772, 819-842)
 - `README.md` (lines 155, 165)
 - `BUILD_FIX_SUMMARY.md` (this file)
 
