@@ -23,7 +23,7 @@ The `start-upgrade.sh` script was treating ANY error from `cargo-install-all.sh`
 
 Modified `start-upgrade.sh` to be **resilient to non-critical build script failures**:
 
-### Changes Made (lines 739-750):
+### Changes Made (lines 753-772):
 
 **Before:**
 ```bash
@@ -39,11 +39,15 @@ if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then
     echo -e "${YELLOW}WARNING: ${CARGO_INSTALL_ALL_SCRIPT} returned an error. Checking if essential binaries were built...${NC}"
     
     # Check if agave-validator binary exists (the most critical binary)
-    if [ -f "./target/release/${VALIDATOR_BINARY_NAME}" ] || [ -f "./bin/${VALIDATOR_BINARY_NAME}" ]; then
+    # Check in multiple possible locations
+    if [ -f "./target/release/${VALIDATOR_BINARY_NAME}" ] || \
+       [ -f "./bin/${VALIDATOR_BINARY_NAME}" ] || \
+       [ -f "${CARGO_TARGET_DIR}/release/${VALIDATOR_BINARY_NAME}" ]; then
         echo -e "${GREEN}Essential validator binary found. Build appears successful despite script error.${NC}"
         echo -e "${YELLOW}Note: Some auxiliary tools like cargo-build-sbf may not have been built/copied.${NC}"
     else
         echo -e "${RED}ERROR: Essential validator binary (${VALIDATOR_BINARY_NAME}) not found after build.${NC}"
+        echo -e "${RED}Checked locations: ./target/release/, ./bin/, ${CARGO_TARGET_DIR}/release/${NC}"
         echo -e "${RED}Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
         exit 1
     fi
@@ -54,8 +58,11 @@ fi
 
 1. **Runs cargo-install-all.sh** as before
 2. **If it fails**, instead of immediately exiting:
-   - Checks if `agave-validator` binary exists in `./target/release/` or `./bin/`
-   - If found → **continues with warning** (build succeeded, only auxiliary tools missing)
+   - Checks if `agave-validator` binary exists in multiple locations:
+     - `./target/release/` (standard location)
+     - `./bin/` (where cargo-install-all.sh copies binaries)
+     - `${CARGO_TARGET_DIR}/release/` (custom target directory if set)
+   - If found in ANY location → **continues with warning** (build succeeded, only auxiliary tools missing)
    - If not found → **exits with error** (real build failure)
 
 ## Benefits
@@ -93,8 +100,8 @@ This fix addresses similar issues that may occur with:
 
 ## Files Modified
 
-- `start-upgrade.sh` (lines 739-750)
-- `README.md` (line 165)
+- `start-upgrade.sh` (lines 753-772, plus cargo clean addition at lines 734-741)
+- `README.md` (lines 155, 165)
 - `BUILD_FIX_SUMMARY.md` (this file)
 
 ## Status
@@ -102,4 +109,7 @@ This fix addresses similar issues that may occur with:
 ✅ **Fixed and ready for testing**
 
 The build should now complete successfully for v3.0.6-jito.1 and other versions where auxiliary tools may be missing.
+
+
+
 
