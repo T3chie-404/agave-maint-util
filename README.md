@@ -152,7 +152,7 @@ This command will:
 
 ## Script Workflow (Simplified)
 
-* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
+* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, runs `cargo clean` to remove cached artifacts, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
 * **Rollback:** Lists versions, prompts for selection, updates symlink, verifies, prompts for restart.
 * **Clean:** Lists deletable versions, prompts for numbered selection, confirms, deletes.
 
@@ -162,6 +162,7 @@ This command will:
 * **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc` or `~/.zshrc`, typically handled by the system tuning script which automatically detects your shell).
 * **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
 * **Error Handling:** Uses `set -euo pipefail`.
+* **Fresh Builds:** The script runs `cargo clean` before each build to remove cached artifacts and ensure a clean compilation. This prevents issues where cached artifacts from previous versions could be reused, ensuring each build truly reflects the checked-out version.
 * **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. If the script returns an error but essential binaries (like `agave-validator`) were successfully built, the upgrade will continue with a warning. This handles cases where auxiliary tools like `cargo-build-sbf` may not be built in certain versions. A fallback to `cargo build --release` is provided with a warning if the script is not found.
 * **Irreversible Deletion:** The `clean` command uses `rm -rf`. Double-check selections before confirming deletion as this action is permanent.
 EOF

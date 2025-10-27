@@ -731,6 +731,15 @@ fi
 echo -e "${GREEN}Ready to build...${NC}"
 sleep 5
 
+# Clean any previous build artifacts to ensure fresh build
+echo -e "${CYAN}Cleaning previous build artifacts...${NC}"
+if command -v cargo &> /dev/null; then
+    cargo clean
+    echo -e "${GREEN}Cargo clean completed.${NC}"
+else
+    echo -e "${YELLOW}WARNING: cargo command not found, skipping clean step.${NC}"
+fi
+
 echo -e "${GREEN}Building ref ${target_ref} (CARGO_BUILD_JOBS=${BUILD_JOBS})...${NC}"
 export CI_COMMIT
 CI_COMMIT=$(git rev-parse HEAD)
