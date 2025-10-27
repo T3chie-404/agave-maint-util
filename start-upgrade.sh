@@ -751,6 +751,7 @@ cd "${SOURCE_DIR}"
 export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
 
 CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
+CARGO_INSTALL_ALL_SUCCESS=false
 if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
     echo -e "${GREEN}Using ${CARGO_INSTALL_ALL_SCRIPT} for build...${NC}"
     if ! "${CARGO_INSTALL_ALL_SCRIPT}" .; then 
@@ -763,12 +764,16 @@ if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
            [ -f "${CARGO_TARGET_DIR}/release/${VALIDATOR_BINARY_NAME}" ]; then
             echo -e "${GREEN}Essential validator binary found. Build appears successful despite script error.${NC}"
             echo -e "${YELLOW}Note: Some auxiliary tools like cargo-build-sbf may not have been built/copied.${NC}"
+            echo -e "${YELLOW}Note: cargo-install-all.sh failed, so ./bin directory may contain stale binaries and will be skipped.${NC}"
+            CARGO_INSTALL_ALL_SUCCESS=false
         else
             echo -e "${RED}ERROR: Essential validator binary (${VALIDATOR_BINARY_NAME}) not found after build.${NC}"
             echo -e "${RED}Checked locations: ./target/release/, ./bin/, ${CARGO_TARGET_DIR}/release/${NC}"
             echo -e "${RED}Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
             exit 1
         fi
+    else
+        CARGO_INSTALL_ALL_SUCCESS=true
     fi
 else
     echo -e "${RED}ERROR: Build script ${CARGO_INSTALL_ALL_SCRIPT} not found or not executable in ${SOURCE_DIR}/scripts/.${NC}"
@@ -819,11 +824,13 @@ mkdir -p "${COMPILED_VERSION_BIN_DIR}"
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
 
 # Determine where the build output is located
-# Priority: 1) ./bin (cargo-install-all.sh target), 2) CARGO_TARGET_DIR/release, 3) ./target/release
+# Priority depends on whether cargo-install-all.sh succeeded:
+# - If SUCCESS: Use ./bin (cargo-install-all.sh target) - it has fresh binaries
+# - If FAILED: Skip ./bin (may have stale binaries), use CARGO_TARGET_DIR or ./target/release
 BUILD_OUTPUT_DIR=""
-if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ] && [ -d "${SOURCE_DIR}/bin" ]; then
+if [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ] && [ -d "${SOURCE_DIR}/bin" ]; then
     BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
-    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
+    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (cargo-install-all.sh succeeded)${NC}"
 elif [ -n "${CARGO_TARGET_DIR}" ] && [ -d "${CARGO_TARGET_DIR}/release" ]; then
     BUILD_OUTPUT_DIR="${CARGO_TARGET_DIR}/release"
     echo -e "${CYAN}Using build output from custom CARGO_TARGET_DIR: ${BUILD_OUTPUT_DIR}${NC}"
@@ -832,7 +839,11 @@ elif [ -d "${SOURCE_DIR}/target/release" ]; then
     echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
 else
     echo -e "${RED}ERROR: Cannot find build output directory!${NC}"
-    echo -e "${RED}Checked: ${SOURCE_DIR}/bin, ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release${NC}"
+    if [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ]; then
+        echo -e "${RED}Checked: ${SOURCE_DIR}/bin, ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release${NC}"
+    else
+        echo -e "${RED}Checked: ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release (skipped ./bin due to cargo-install-all.sh failure)${NC}"
+    fi
     exit 1
 fi
 

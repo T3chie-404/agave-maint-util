@@ -100,16 +100,21 @@ This fix addresses similar issues that may occur with:
 
 ## Additional Fixes
 
-### CARGO_TARGET_DIR Build Output Detection (lines 819-842)
+### CARGO_TARGET_DIR Build Output Detection (lines 824-853)
 
-When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*`), the binaries are built there instead of `./target/release/`. The rsync step now intelligently finds the correct build output location:
+When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*`), the binaries are built there instead of `./target/release/`. 
 
-**Priority order:**
-1. `${SOURCE_DIR}/bin` - Where cargo-install-all.sh copies binaries if successful
-2. `${CARGO_TARGET_DIR}/release` - Custom target directory (used for clean builds)
-3. `${SOURCE_DIR}/target/release` - Standard Cargo build location
+**Critical Issue Fixed:** The `./bin` directory may contain **stale binaries from previous builds** if `cargo-install-all.sh` fails. The script now tracks whether `cargo-install-all.sh` succeeded or failed (lines 754-777) and uses this to determine the correct build output location:
 
-This ensures binaries are always found and copied to the final compiled version directory, regardless of where Cargo built them.
+**If cargo-install-all.sh SUCCEEDED:**
+1. `${SOURCE_DIR}/bin` - Fresh binaries copied by cargo-install-all.sh ✅
+
+**If cargo-install-all.sh FAILED:**
+1. `${CARGO_TARGET_DIR}/release` - Fresh binaries from actual build ✅
+2. `${SOURCE_DIR}/target/release` - Standard location (if CARGO_TARGET_DIR not set)
+3. **SKIP** `${SOURCE_DIR}/bin` - May contain stale binaries ⚠️
+
+This ensures only fresh, correctly versioned binaries are copied to the final compiled version directory.
 
 ### Cargo Clean (lines 734-741)
 
@@ -117,7 +122,7 @@ Added `cargo clean` before each build to remove cached artifacts and ensure fres
 
 ## Files Modified
 
-- `start-upgrade.sh` (lines 734-741, 753-772, 819-842)
+- `start-upgrade.sh` (lines 734-741, 753-777, 824-853)
 - `README.md` (lines 155, 165)
 - `BUILD_FIX_SUMMARY.md` (this file)
 
