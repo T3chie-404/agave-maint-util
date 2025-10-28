@@ -116,13 +116,24 @@ When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*
 
 This ensures only fresh, correctly versioned binaries are copied to the final compiled version directory.
 
-### Cargo Clean (lines 734-741)
+### Cargo Clean and ./bin Directory Removal (lines 734-748)
 
-Added `cargo clean` before each build to remove cached artifacts and ensure fresh compilation. This prevents issues where cached artifacts from previous versions could be incorrectly reused.
+Added two critical cleaning steps before each build:
+
+1. **`cargo clean`** - Removes cached build artifacts from the Cargo cache
+2. **`rm -rf ./bin`** - Removes the `./bin` directory where `cargo-install-all.sh` copies final binaries
+
+**Why both are needed:**
+- `cargo clean` only cleans build caches, not the final `./bin` output directory
+- The `./bin` directory may contain stale binaries from previous builds
+- Even when `cargo-install-all.sh` succeeds, it may not overwrite all existing binaries in `./bin`
+- Removing `./bin` ensures `cargo-install-all.sh` creates fresh binaries, not a mix of old and new
+
+This prevents the critical issue where version 3.0.6 binaries remained in `./bin` even after successfully building version 3.0.8.
 
 ## Files Modified
 
-- `start-upgrade.sh` (lines 734-741, 753-777, 824-853)
+- `start-upgrade.sh` (lines 734-748, 760-784, 831-860)
 - `README.md` (lines 155, 165)
 - `BUILD_FIX_SUMMARY.md` (this file)
 

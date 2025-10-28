@@ -740,6 +740,13 @@ else
     echo -e "${YELLOW}WARNING: cargo command not found, skipping clean step.${NC}"
 fi
 
+# Also remove ./bin directory to prevent stale binaries
+if [ -d "./bin" ]; then
+    echo -e "${CYAN}Removing stale ./bin directory...${NC}"
+    rm -rf "./bin"
+    echo -e "${GREEN}Removed ./bin directory.${NC}"
+fi
+
 echo -e "${GREEN}Building ref ${target_ref} (CARGO_BUILD_JOBS=${BUILD_JOBS})...${NC}"
 export CI_COMMIT
 CI_COMMIT=$(git rev-parse HEAD)
