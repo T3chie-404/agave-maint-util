@@ -100,21 +100,23 @@ This fix addresses similar issues that may occur with:
 
 ## Additional Fixes
 
-### CARGO_TARGET_DIR Build Output Detection (lines 824-853)
+### CARGO_TARGET_DIR Build Output Detection (lines 833-856)
 
 When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*`), the binaries are built there instead of `./target/release/`. 
 
-**Critical Issue Fixed:** The `./bin` directory may contain **stale binaries from previous builds** if `cargo-install-all.sh` fails. The script now tracks whether `cargo-install-all.sh` succeeded or failed (lines 754-777) and uses this to determine the correct build output location:
+**CRITICAL DISCOVERY:** Jito's `cargo-install-all.sh` script **does NOT respect CARGO_TARGET_DIR**. It's hardcoded to look for binaries in `./target/release/` and copy them to `./bin/`. When CARGO_TARGET_DIR is set:
+- The actual build happens in `/tmp/cargo-target-*/release/` with the CORRECT version ✅
+- But `cargo-install-all.sh` copies from `./target/release/` (which may have old binaries) to `./bin/` ❌
+- This results in the wrong version being deployed even though the build succeeded!
 
-**If cargo-install-all.sh SUCCEEDED:**
-1. `${SOURCE_DIR}/bin` - Fresh binaries copied by cargo-install-all.sh ✅
+**Solution:** ALWAYS prioritize CARGO_TARGET_DIR when it's set, regardless of whether cargo-install-all.sh succeeded:
 
-**If cargo-install-all.sh FAILED:**
-1. `${CARGO_TARGET_DIR}/release` - Fresh binaries from actual build ✅
-2. `${SOURCE_DIR}/target/release` - Standard location (if CARGO_TARGET_DIR not set)
-3. **SKIP** `${SOURCE_DIR}/bin` - May contain stale binaries ⚠️
+**New Priority Order:**
+1. `${CARGO_TARGET_DIR}/release` - If CARGO_TARGET_DIR is set (ALWAYS use this first) ✅
+2. `${SOURCE_DIR}/bin` - If cargo-install-all.sh succeeded AND no CARGO_TARGET_DIR
+3. `${SOURCE_DIR}/target/release` - Standard location fallback
 
-This ensures only fresh, correctly versioned binaries are copied to the final compiled version directory.
+This ensures the actual compiled binaries are used, not whatever cargo-install-all.sh copied from the wrong location.
 
 ### Cargo Clean and ./bin Directory Removal (lines 734-748)
 
@@ -133,7 +135,7 @@ This prevents the critical issue where version 3.0.6 binaries remained in `./bin
 
 ## Files Modified
 
-- `start-upgrade.sh` (lines 734-748, 760-784, 831-860)
+- `start-upgrade.sh` (lines 734-748, 760-784, 833-856)
 - `README.md` (lines 155, 165)
 - `BUILD_FIX_SUMMARY.md` (this file)
 

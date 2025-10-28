@@ -831,26 +831,22 @@ mkdir -p "${COMPILED_VERSION_BIN_DIR}"
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
 
 # Determine where the build output is located
-# Priority depends on whether cargo-install-all.sh succeeded:
-# - If SUCCESS: Use ./bin (cargo-install-all.sh target) - it has fresh binaries
-# - If FAILED: Skip ./bin (may have stale binaries), use CARGO_TARGET_DIR or ./target/release
+# Priority: ALWAYS use CARGO_TARGET_DIR if set (cargo-install-all.sh doesn't respect it)
+# Otherwise use ./bin if cargo-install-all.sh succeeded, or ./target/release as fallback
 BUILD_OUTPUT_DIR=""
-if [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ] && [ -d "${SOURCE_DIR}/bin" ]; then
-    BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
-    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (cargo-install-all.sh succeeded)${NC}"
-elif [ -n "${CARGO_TARGET_DIR}" ] && [ -d "${CARGO_TARGET_DIR}/release" ]; then
+if [ -n "${CARGO_TARGET_DIR}" ] && [ -d "${CARGO_TARGET_DIR}/release" ]; then
     BUILD_OUTPUT_DIR="${CARGO_TARGET_DIR}/release"
     echo -e "${CYAN}Using build output from custom CARGO_TARGET_DIR: ${BUILD_OUTPUT_DIR}${NC}"
+    echo -e "${YELLOW}Note: cargo-install-all.sh doesn't respect CARGO_TARGET_DIR, using actual build location${NC}"
+elif [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ] && [ -d "${SOURCE_DIR}/bin" ]; then
+    BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
+    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (cargo-install-all.sh succeeded)${NC}"
 elif [ -d "${SOURCE_DIR}/target/release" ]; then
     BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
     echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
 else
     echo -e "${RED}ERROR: Cannot find build output directory!${NC}"
-    if [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ]; then
-        echo -e "${RED}Checked: ${SOURCE_DIR}/bin, ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release${NC}"
-    else
-        echo -e "${RED}Checked: ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release (skipped ./bin due to cargo-install-all.sh failure)${NC}"
-    fi
+    echo -e "${RED}Checked: ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/bin, ${SOURCE_DIR}/target/release${NC}"
     exit 1
 fi
 
