@@ -102,21 +102,38 @@ Make the script executable: `chmod +x start-upgrade.sh`
 ### 1. Upgrade to a New Version
 
 ```
-./start-upgrade.sh <version_tag> [-j <number_of_jobs>]`
+./start-upgrade.sh <version_tag> [--variant <variant>] [-j <number_of_jobs>]
 ```
 
-* `<version_tag>`: The Git tag of the version you want to build and install.
-    * If the tag ends with `-jito` (e.g., `v2.2.14-jito`), the script will build from `JITO_SOURCE_DIR`.
-    * If the tag starts with `x` (e.g., `x2.2.0-munich`) and does not end with `-jito`, it will prompt to confirm building the Xandeum-Agave client from `XANDEUM_SOURCE_DIR`.
-    * For other tags (not ending in `-jito`, not starting with `x`), it will prompt to confirm building the vanilla Agave client from `VANILLA_SOURCE_DIR`.
+* `<version_tag>`: The Git tag or branch name of the version you want to build and install.
+* `--variant <variant>` (Optional): Explicitly specify which client variant to build (`agave`, `jito`, or `xandeum`). 
+    * **Recommended for Xandeum branches** that don't start with `x` (e.g., `reinheim`, `ingolstadt`, `upgrade`).
+    * Skips automatic detection and confirmation prompts.
+    * If not specified, the script auto-detects based on the tag/branch name:
+        * Tags ending with `-jito` (e.g., `v2.2.14-jito`) → builds Jito
+        * Tags starting with `x` (e.g., `x2.2.0-munich`) → prompts for Xandeum confirmation
+        * Other tags → prompts for vanilla Agave confirmation
 * `-j <number_of_jobs>` (Optional): Specifies the number of parallel jobs for `cargo build` by setting the `CARGO_BUILD_JOBS` environment variable.
 
 **Examples:**
-```
+```bash
+# Jito build (auto-detected)
 ./start-upgrade.sh v2.2.14-jito
+
+# Xandeum build with explicit variant (no prompt)
+./start-upgrade.sh reinheim --variant xandeum
+
+# Xandeum build with explicit variant and custom jobs
+./start-upgrade.sh ingolstadt --variant xandeum -j 32
+
+# Xandeum build with tag starting with 'x' (will prompt)
+./start-upgrade.sh x2.2.0-munich
+
+# Vanilla Agave with explicit variant
+./start-upgrade.sh v1.10.0 --variant agave
+
+# Build with custom number of jobs
 ./start-upgrade.sh v2.2.14-jito -j 32
-./start-upgrade.sh x2.2.0-munich # Will prompt for Xandeum confirmation
-./start-upgrade.sh v1.10.0      # Will prompt for Vanilla Agave confirmation
 ```
 
 ### 2. List Available Tags or Branches
