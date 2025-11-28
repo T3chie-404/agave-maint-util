@@ -399,6 +399,16 @@ perform_rollback() {
     read -r -p "Enter min idle time (seconds) for restart [default: ${DEFAULT_MIN_IDLE_TIME}]: " user_min_idle
     if [ -n "${user_min_idle}" ]; then min_idle_time="${user_min_idle}"; fi
 
+    # Check if --no-wait-for-exit flag is supported
+    echo -e "${CYAN}Checking validator exit command syntax...${NC}"
+    ROLLBACK_USE_NO_WAIT_FLAG=false
+    if check_exit_flag_support "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}"; then
+        ROLLBACK_USE_NO_WAIT_FLAG=true
+        echo -e "${GREEN}Flag --no-wait-for-exit is supported by this validator version${NC}"
+    else
+        echo -e "${YELLOW}Flag --no-wait-for-exit not supported - will use legacy syntax${NC}"
+    fi
+
     read -r -p "Rollback to ${version_to_rollback_to} prepared. Press 'x' (then Enter) to exit script WITHOUT restarting validator, or just Enter to proceed with restart (using max_delinquent_stake=${max_delinquent_stake}, min_idle_time=${min_idle_time}): " final_user_input_rb_before_restart
     if [[ "${final_user_input_rb_before_restart,,}" == "x" ]]; then
         echo -e "${CYAN}Exiting script now as per user request. Validator restart NOT initiated.${NC}"
@@ -407,7 +417,15 @@ perform_rollback() {
 
     echo -e "${GREEN}Proceeding with validator exit command...${NC}"
     sleep 1
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit --max-delinquent-stake "${max_delinquent_stake}" --min-idle-time "${min_idle_time}" --monitor
+    
+    # Build exit command with appropriate flags
+    EXIT_FLAGS_ROLLBACK="--max-delinquent-stake ${max_delinquent_stake} --min-idle-time ${min_idle_time}"
+    if [ "$ROLLBACK_USE_NO_WAIT_FLAG" = true ]; then
+        EXIT_FLAGS_ROLLBACK="${EXIT_FLAGS_ROLLBACK} --no-wait-for-exit"
+    fi
+    
+    echo -e "${CYAN}Issuing exit command: ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK} --ledger ${LEDGER_DIR} exit ${EXIT_FLAGS_ROLLBACK} --monitor${NC}"
+    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit ${EXIT_FLAGS_ROLLBACK} --monitor
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
