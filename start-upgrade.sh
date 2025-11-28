@@ -361,12 +361,12 @@ perform_rollback() {
     ln -sf "${COMPILED_ROLLBACK_BIN_DIR}" "${ACTIVE_RELEASE_SYMLINK}"
 
     echo -e "${GREEN}\nVerifying rolled-back version using binary from symlink (direct path)...${NC}"
-    VALIDATOR_EXECUTABLE_PATH_ROLLBACK="${ACTIVE_RELEASE_SYMLINK}/${VALIDATOR_BINARY_name}"
+    VALIDATOR_EXECUTABLE_PATH_ROLLBACK="${ACTIVE_RELEASE_SYMLINK}/${VALIDATOR_BINARY_NAME}"
     if [ -x "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" ]; then
         echo -e "${CYAN}Running: ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK} -V${NC}"
         "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" -V
     else
-        echo -e "${RED}ERROR: ${VALIDATOR_BINARY_name} not found or not executable at ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}${NC}"
+        echo -e "${RED}ERROR: ${VALIDATOR_BINARY_NAME} not found or not executable at ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}${NC}"
     fi
     echo -e "${MAGENTA}\nSuccessfully rolled back. Active version now points to binaries from: ${version_to_rollback_to}${NC}"
 
