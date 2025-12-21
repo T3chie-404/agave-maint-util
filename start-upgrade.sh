@@ -28,28 +28,28 @@ CYAN='\033[1;36m'
 # ##############################################################################
 
 # --- Configuration Variables ---
-JITO_SOURCE_DIR="$HOME/data/jito-solana" 
+JITO_SOURCE_DIR="/mnt/data/jito-solana" 
 JITO_REPO_URL="https://github.com/jito-foundation/jito-solana.git"
 
-VANILLA_SOURCE_DIR="$HOME/data/agave"   
+VANILLA_SOURCE_DIR="/mnt/data/agave"   
 VANILLA_REPO_URL="https://github.com/anza-xyz/agave.git" 
 
-XANDEUM_SOURCE_DIR="$HOME/data/xandeum-agave" 
+XANDEUM_SOURCE_DIR="/mnt/data/xandeum-agave" 
 XANDEUM_REPO_URL="https://github.com/Xandeum/xandeum-agave.git"
 
 SOURCE_DIR_TO_SHOW=""
 REPO_URL_TO_SHOW=""
 
-COMPILED_BASE_DIR="$HOME/data/compiled" 
+COMPILED_BASE_DIR="/mnt/data/compiled" 
 ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release" 
-# IMPORTANT: If you change COMPILED_BASE_DIR (and thus ACTIVE_RELEASE_SYMLINK),
-#            ensure your systemd service file (e.g., /etc/systemd/system/validator.service)
+# IMPORTANT: Ensure your systemd service file (e.g., /etc/systemd/system/validator.service)
 #            points to the correct path for the agave-validator binary,
 #            either directly or by having ACTIVE_RELEASE_SYMLINK in its PATH.
 #            Also, ensure your user's ~/.bashrc (configured by the system tuning script)
 #            points to this ACTIVE_RELEASE_SYMLINK for interactive use.
 
-LEDGER_DIR="$HOME/ledger" 
+LEDGER_DIR="/mnt/ledger" 
+ACCOUNTS_DIR="/mnt/accounts"
 BUILD_JOBS=2 
 VALIDATOR_BINARY_NAME="agave-validator" 
 

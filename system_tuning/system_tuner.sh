@@ -22,27 +22,20 @@ CYAN_BOLD='\033[1;36m'
 
 # --- Configuration Variables (User can modify these defaults) ---
 # Path for the symlink pointing to the active validator binaries (used for user's PATH)
-# Defaulting to a path within the user's home directory.
-# If using a shared /mnt/data, change this to, e.g., "/mnt/data/compiled/active_release"
-CONFIGURABLE_ACTIVE_RELEASE_PATH="$HOME/data/compiled/active_release"
+CONFIGURABLE_ACTIVE_RELEASE_PATH="/mnt/data/compiled/active_release"
 
 # Path for the validator's main log file (for logrotate setup)
-# Defaulting to a path within the user's home directory.
-# If using a shared /mnt/data, change this to, e.g., "/mnt/data/logs/solana-validator.log"
-CONFIGURABLE_VALIDATOR_LOG_FILE_PATH="$HOME/data/logs/solana-validator.log"
+CONFIGURABLE_VALIDATOR_LOG_FILE_PATH="/mnt/data/logs/solana-validator.log"
 
 # User that should own the validator log directory (for logrotate setup)
-# This should typically be the user the validator service runs as.
-CONFIGURABLE_VALIDATOR_LOG_DIR_USER="sol" # Change if your validator runs as a different user
+# Defaults to the user running this script
+CONFIGURABLE_VALIDATOR_LOG_DIR_USER="$(whoami)"
 
 # Name of the systemd service for the validator (for logrotate postrotate action)
 CONFIGURABLE_VALIDATOR_SERVICE_NAME="validator.service"
 
 # Name of the main validator binary
 CONFIGURABLE_VALIDATOR_BINARY_NAME="agave-validator"
-
-# Specific old path segment to look for and replace in the validator service's PATH environment
-OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="/home/sol/.local/share/xandeum/install/releases/active_release"
 
 # Path to the validator start script (e.g., a .sh file that execs the validator)
 CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="$HOME/validator-start.sh"
@@ -319,70 +312,6 @@ EOF
     echo -e "${YELLOW}Note: Using 'postrotate' with USR1 signal. If ${VALIDATOR_SERVICE_NAME} does not support this, use 'copytruncate' instead and comment out the 'postrotate' block.${NC}"
 }
 
-update_validator_service_environment_path() {
-    log_msg "Checking validator systemd service for old PATH environment..."
-    local service_name="${CONFIGURABLE_VALIDATOR_SERVICE_NAME}"
-    local service_file_path="/etc/systemd/system/${service_name}"
-    local old_path_segment_to_replace="${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}"
-    local new_path_segment_configurable="${CONFIGURABLE_ACTIVE_RELEASE_PATH}"
-    local new_path_segment_expanded
-    new_path_segment_expanded=$(eval echo "${new_path_segment_configurable}") # Expand $HOME if present
-
-    if [ ! -f "${service_file_path}" ]; then
-        log_msg "${YELLOW}Validator service file ${service_file_path} not found. Skipping PATH update for service.${NC}"
-        log_msg "${YELLOW}If you have a service file at a different location, please update it manually if needed.${NC}"
-        return
-    fi
-
-    log_msg "Found service file: ${service_file_path}"
-    local current_env_path_line
-    current_env_path_line=$(grep -E '^\s*Environment="PATH=' "${service_file_path}" || true)
-
-    if [ -z "${current_env_path_line}" ]; then
-        log_msg "${YELLOW}No 'Environment=\"PATH=...\"' line found in ${service_file_path}. Skipping PATH update for service.${NC}"
-        return
-    fi
-
-    log_msg "Current Environment PATH line: ${current_env_path_line}"
-    
-    local current_path_value
-    current_path_value=$(echo "${current_env_path_line}" | sed -E 's/^\s*Environment="PATH=([^"]+)".*/\1/')
-    
-    if [[ "${current_path_value}" == *"${old_path_segment_to_replace}"* ]]; then
-        log_msg "${YELLOW}Old path segment '${old_path_segment_to_replace}' found in service PATH.${NC}"
-        
-        local new_path_value
-        new_path_value="${current_path_value//${old_path_segment_to_replace}/${new_path_segment_expanded}}"
-        
-        local new_env_path_line
-        new_env_path_line="Environment=\"PATH=${new_path_value}\"" 
-
-        log_msg "Proposed new Environment PATH line: ${new_env_path_line}"
-        if confirm_action "Update the Environment PATH in ${service_file_path}?"; then
-            sudo cp "${service_file_path}" "${service_file_path}.bak_$(date +%Y%m%d%H%M%S)"
-            log_msg "Backed up ${service_file_path} to ${service_file_path}.bak_..."
-            
-            local escaped_current_env_path_line
-            escaped_current_env_path_line=$(echo "${current_env_path_line}" | sed 's/[&/\]/\\&/g') 
-            local escaped_new_env_path_line
-            escaped_new_env_path_line=$(echo "${new_env_path_line}" | sed 's/[&/\]/\\&/g')
-
-            if sudo sed -i "s|^${escaped_current_env_path_line}$|${escaped_new_env_path_line}|" "${service_file_path}"; then
-                log_msg "${GREEN}Successfully updated Environment PATH in ${service_file_path}.${NC}"
-                log_msg "Reloading systemd daemon..."
-                sudo systemctl daemon-reload
-                log_msg "${GREEN}Systemd daemon reloaded.${NC}"
-            else
-                log_msg "${RED}ERROR: Failed to update ${service_file_path} with sed.${NC}"
-            fi
-        else
-            log_msg "Skipped updating Environment PATH in ${service_file_path}."
-        fi
-    else
-        log_msg "${GREEN}Old path segment '${old_path_segment_to_replace}' not found in service PATH. No update needed for this specific old path.${NC}"
-    fi
-}
-
 update_validator_start_script_log_path() {
     log_msg "Checking validator start script for --log path..."
     local start_script_path_configurable="${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
@@ -517,10 +446,6 @@ read -r -p "Enter path to validator start script (e.g., ~/validator-start.sh) [d
 if [ -n "${user_validator_start_script}" ]; then CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH="${user_validator_start_script}"; fi
 log_msg "Using validator start script path: ${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}"
 
-read -r -p "Enter the specific OLD 'active_release' path segment to search for in the service file [default: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}]: " user_old_service_path
-if [ -n "${user_old_service_path}" ]; then OLD_SERVICE_PATH_SEGMENT_TO_REPLACE="${user_old_service_path}"; fi
-log_msg "Will look for old path segment: ${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE} in service file PATH."
-
 
 if confirm_action "Configure persistent PATH for '${CONFIGURABLE_ACTIVE_RELEASE_PATH}' in ~/.bashrc?"; then
     configure_active_release_path
@@ -548,10 +473,6 @@ fi
 
 if confirm_action "Setup logrotate for validator logs?"; then
     setup_logrotate
-fi
-
-if confirm_action "Check/update validator systemd service Environment PATH if '${OLD_SERVICE_PATH_SEGMENT_TO_REPLACE}' is found?"; then
-    update_validator_service_environment_path
 fi
 
 if confirm_action "Check/update --log path in validator start script '${CONFIGURABLE_VALIDATOR_START_SCRIPT_PATH}'?"; then
