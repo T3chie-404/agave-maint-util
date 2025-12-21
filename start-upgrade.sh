@@ -6,7 +6,7 @@ set -euo pipefail # Exit on error, unset variable, or pipe failure
 # (including persistent PATH setup) have already been applied to the system.
 #
 # Usage:
-#   Upgrade:         ./script_name <tag_or_branch_for_upgrade> [-j <num_jobs>]
+#   Upgrade:         ./script_name <tag_or_branch> [--variant <agave|jito|xandeum>] [-j <num_jobs>]
 #   Rollback:        ./script_name rollback
 #   Clean:           ./script_name clean
 #   List Tags:       ./script_name --list-tags <variant> (variant: agave, jito, xandeum)
@@ -410,7 +410,7 @@ perform_clean() {
 # Assumes dependencies (git, cargo, rsync, jq, etc.) are pre-installed.
 if [ -z "${1:-}" ]; then 
     echo -e "${RED}\n:::ERROR::: ${CYAN}No argument provided.${NC}"
-    echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_or_branch_for_upgrade> [-j <num_jobs>]${NC}"
+    echo -e "${CYAN}Usage for Upgrade: ${YELLOW}$(basename "$0") <tag_or_branch> [--variant <agave|jito|xandeum>] [-j <num_jobs>]${NC}"
     echo -e "${CYAN}        or         ${YELLOW}$(basename "$0") --list-tags <variant> | --list-branches <variant>${NC}"
     echo -e "${CYAN}                   (variant: agave, jito, xandeum)${NC}"
     echo -e "${CYAN}Usage for Rollback: ${YELLOW}$(basename "$0") rollback${NC}"
@@ -447,36 +447,77 @@ target_ref="${MODE_OR_REF_ARG}" # $1 is the tag or branch
 # Sanitize the ref name for use as a directory name (replaces '/' with '_')
 sanitized_ref_name=$(echo "${target_ref}" | tr '/' '_')
 
-# Argument parsing for -j (optional, can be $2 and $3 if present)
-if [ "$#" -gt 1 ]; then 
-    if [ "$2" == "-j" ]; then
-        if [ -n "$3" ] && [[ "$3" =~ ^[0-9]+$ ]] && [ "$3" -gt 0 ]; then
-            BUILD_JOBS="$3"
+# Argument parsing for --variant and -j (optional)
+EXPLICIT_VARIANT=""
+shift # Remove the first argument (target_ref) so we can parse remaining args
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --variant)
+            if [ -z "${2:-}" ]; then
+                echo -e "${RED}\n:::ERROR::: ${CYAN}--variant requires a value (agave, jito, xandeum).${NC}"
+                exit 1
+            fi
+            case "${2,,}" in
+                agave|jito|xandeum)
+                    EXPLICIT_VARIANT="${2,,}"
+                    echo -e "${CYAN}Explicit variant specified: ${GREEN}${EXPLICIT_VARIANT}${NC}"
+                    shift 2
+                    ;;
+                *)
+                    echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid variant '${2}'. Valid options: agave, jito, xandeum.${NC}"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        -j)
+            if [ -z "${2:-}" ] || ! [[ "${2}" =~ ^[0-9]+$ ]] || [ "${2}" -le 0 ]; then
+                echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid value for -j. Please provide a positive integer for number of jobs.${NC}"
+                exit 1
+            fi
+            BUILD_JOBS="${2}"
             echo -e "${CYAN}Using custom number of build jobs: ${GREEN}${BUILD_JOBS}${NC}"
-        else
-            echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid value for -j. Please provide a positive integer for number of jobs.${NC}"
+            shift 2
+            ;;
+        *)
+            echo -e "${RED}\n:::ERROR::: ${CYAN}Unknown argument '${1}'. Expected --variant <variant> or -j <num_jobs>.${NC}"
             exit 1
-        fi
-        if [ "$#" -gt 3 ]; then # $1=ref, $2=-j, $3=jobs. Anything more is an error.
-            echo -e "${RED}\n:::ERROR::: ${CYAN}Too many arguments. Unexpected arguments after -j <num_jobs>.${NC}"
-            exit 1
-        fi
-    else # If $2 is present but not -j, it's an error
-       echo -e "${RED}\n:::ERROR::: ${CYAN}Invalid arguments. Expected '-j <num_jobs>' or no other arguments after ref.${NC}"
-       exit 1
-    fi
-fi
+            ;;
+    esac
+done
 
 
 echo -e "${CYAN}\n--- Initiating Upgrade Process ---${NC}"
 echo -e "${CYAN}Target ref (tag/branch) for upgrade: ${GREEN}${target_ref}${NC}"
 
-# Determine which source directory to use based on the ref
-if [[ "${target_ref}" == *"-jito" ]]; then
+# Determine which source directory to use
+# Priority: 1) Explicit --variant flag, 2) Auto-detect from ref name
+if [ -n "${EXPLICIT_VARIANT}" ]; then
+    # Use explicitly specified variant
+    case "${EXPLICIT_VARIANT}" in
+        agave)
+            SOURCE_DIR="${VANILLA_SOURCE_DIR}"
+            REPO_URL_TO_CLONE="${VANILLA_REPO_URL}"
+            echo -e "${GREEN}Using vanilla Agave source directory: ${SOURCE_DIR}${NC}"
+            ;;
+        jito)
+            SOURCE_DIR="${JITO_SOURCE_DIR}"
+            REPO_URL_TO_CLONE="${JITO_REPO_URL}"
+            echo -e "${GREEN}Using Jito source directory: ${SOURCE_DIR}${NC}"
+            ;;
+        xandeum)
+            SOURCE_DIR="${XANDEUM_SOURCE_DIR}"
+            REPO_URL_TO_CLONE="${XANDEUM_REPO_URL}"
+            echo -e "${GREEN}Using Xandeum-Agave source directory: ${SOURCE_DIR}${NC}"
+            ;;
+    esac
+elif [[ "${target_ref}" == *"-jito" ]]; then
+    # Auto-detect: Jito (ref ends with -jito)
     SOURCE_DIR="${JITO_SOURCE_DIR}"
     REPO_URL_TO_CLONE="${JITO_REPO_URL}"
     echo -e "${GREEN}Ref ends with '-jito'. Using Jito source directory: ${SOURCE_DIR}${NC}"
-elif [[ "${target_ref}" == x* ]]; then # If ref starts with 'x', it could be Xandeum
+elif [[ "${target_ref}" == x* ]]; then
+    # Auto-detect: Xandeum (ref starts with x)
     echo -e "${YELLOW}The provided ref '${target_ref}' starts with 'x'.${NC}"
     echo -e "${YELLOW}This might be a Xandeum-Agave client build.${NC}"
     echo -e " - Xandeum-Agave client will be built from: ${XANDEUM_SOURCE_DIR}"
@@ -487,10 +528,12 @@ elif [[ "${target_ref}" == x* ]]; then # If ref starts with 'x', it could be Xan
         REPO_URL_TO_CLONE="${XANDEUM_REPO_URL}"
         echo -e "${GREEN}Confirmed. Using Xandeum-Agave source directory: ${SOURCE_DIR}${NC}"
     else
-        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For vanilla, use a ref not starting with 'x'.${NC}"
+        echo -e "${RED}Build cancelled by user.${NC}"
+        echo -e "${YELLOW}Tip: Use --variant to explicitly specify: --variant agave, --variant jito, or --variant xandeum${NC}"
         exit 1
     fi
-else # Default to vanilla Agave if not ending in -jito and not starting with x
+else
+    # Auto-detect: Default to vanilla Agave
     echo -e "${YELLOW}The provided ref '${target_ref}' does not end with '-jito' and does not start with 'x'.${NC}"
     echo -e "${YELLOW}This suggests you might want to build the vanilla Agave client.${NC}"
     echo -e " - Vanilla Agave client will be built from: ${VANILLA_SOURCE_DIR}"
@@ -501,7 +544,8 @@ else # Default to vanilla Agave if not ending in -jito and not starting with x
         REPO_URL_TO_CLONE="${VANILLA_REPO_URL}"
         echo -e "${GREEN}Confirmed. Using vanilla Agave source directory: ${SOURCE_DIR}${NC}"
     else
-        echo -e "${RED}Build cancelled by user. For Jito, use '-jito' suffix. For Xandeum, use an 'x' prefixed ref.${NC}"
+        echo -e "${RED}Build cancelled by user.${NC}"
+        echo -e "${YELLOW}Tip: Use --variant to explicitly specify: --variant agave, --variant jito, or --variant xandeum${NC}"
         exit 1
     fi
 fi
