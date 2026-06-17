@@ -21,6 +21,9 @@ GREEN='\033[1;32m'
 MAGENTA='\033[0;35m'
 CYAN='\033[1;36m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${ENV_FILE:-${SCRIPT_DIR}/.env}"
+
 # ##############################################################################
 # #                                                                            #
 # #               CHECK THESE CONFIGURATION VARIABLES                          #
@@ -61,6 +64,148 @@ DEFAULT_MIN_IDLE_TIME=5
 export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
 
 # --- End Configuration Variables ---
+
+expand_home_path() {
+    local value="$1"
+
+    case "${value}" in
+        "~")
+            printf '%s\n' "${HOME}"
+            ;;
+        "~/"*)
+            printf '%s\n' "${HOME}/${value#~/}"
+            ;;
+        '$HOME'/*)
+            printf '%s\n' "${HOME}/${value#\$HOME/}"
+            ;;
+        '${HOME}'/*)
+            printf '%s\n' "${HOME}/${value#\$\{HOME\}/}"
+            ;;
+        *)
+            printf '%s\n' "${value}"
+            ;;
+    esac
+}
+
+is_allowed_env_key() {
+    case "$1" in
+        JITO_SOURCE_DIR|JITO_REPO_URL|VANILLA_SOURCE_DIR|VANILLA_REPO_URL|XANDEUM_SOURCE_DIR|XANDEUM_REPO_URL|COMPILED_BASE_DIR|ACTIVE_RELEASE_SYMLINK|LEDGER_DIR|BUILD_JOBS|VALIDATOR_BINARY_NAME|DEFAULT_MAX_DELINQUENT_STAKE|DEFAULT_MIN_IDLE_TIME|CARGO_TARGET_DIR)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+assign_config_value() {
+    local key="$1"
+    local value="$2"
+
+    case "${key}" in
+        ACTIVE_RELEASE_SYMLINK)
+            ENV_SET_ACTIVE_RELEASE_SYMLINK=true
+            ;;
+        CARGO_TARGET_DIR)
+            ENV_SET_CARGO_TARGET_DIR=true
+            ;;
+    esac
+
+    case "${key}" in
+        JITO_SOURCE_DIR|VANILLA_SOURCE_DIR|XANDEUM_SOURCE_DIR|COMPILED_BASE_DIR|ACTIVE_RELEASE_SYMLINK|LEDGER_DIR|CARGO_TARGET_DIR)
+            value=$(expand_home_path "${value}")
+            ;;
+    esac
+
+    printf -v "${key}" '%s' "${value}"
+}
+
+validate_numeric_config() {
+    local key="$1"
+    local value="$2"
+
+    if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}ERROR: ${key} must be a non-negative integer. Current value: '${value}'${NC}"
+        exit 1
+    fi
+
+    if [ "${key}" = "BUILD_JOBS" ] && [ "${value}" -le 0 ]; then
+        echo -e "${RED}ERROR: BUILD_JOBS must be greater than zero. Current value: '${value}'${NC}"
+        exit 1
+    fi
+}
+
+load_env_config() {
+    if [ ! -f "${ENV_FILE}" ]; then
+        return
+    fi
+
+    if [ ! -O "${ENV_FILE}" ]; then
+        echo -e "${RED}ERROR: Refusing to read ${ENV_FILE} because it is not owned by $(whoami).${NC}"
+        exit 1
+    fi
+
+    local env_perms
+    env_perms=$(stat -c '%a' "${ENV_FILE}")
+    if [ $((8#${env_perms} & 0022)) -ne 0 ]; then
+        echo -e "${RED}ERROR: Refusing to read ${ENV_FILE} because it is writable by group or others.${NC}"
+        echo -e "${YELLOW}Fix with: chmod 600 ${ENV_FILE}${NC}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}Loading configuration from ${ENV_FILE}${NC}"
+
+    local line key value
+    while IFS= read -r line || [ -n "${line}" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+
+        if [ -z "${line}" ] || [[ "${line}" == \#* ]]; then
+            continue
+        fi
+
+        if [[ "${line}" == export[[:space:]]* ]]; then
+            line="${line#export}"
+            line="${line#"${line%%[![:space:]]*}"}"
+        fi
+
+        if [[ ! "${line}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            echo -e "${RED}ERROR: Invalid .env line: ${line}${NC}"
+            exit 1
+        fi
+
+        key="${line%%=*}"
+        value="${line#*=}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+
+        if ! is_allowed_env_key "${key}"; then
+            echo -e "${RED}ERROR: ${ENV_FILE} contains unsupported key '${key}'.${NC}"
+            exit 1
+        fi
+
+        if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+            value="${value:1:${#value}-2}"
+        elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+            value="${value:1:${#value}-2}"
+        fi
+
+        assign_config_value "${key}" "${value}"
+    done < "${ENV_FILE}"
+}
+
+ENV_SET_ACTIVE_RELEASE_SYMLINK=false
+ENV_SET_CARGO_TARGET_DIR=false
+load_env_config
+if [ "${ENV_SET_ACTIVE_RELEASE_SYMLINK}" = false ]; then
+    ACTIVE_RELEASE_SYMLINK="${COMPILED_BASE_DIR}/active_release"
+fi
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/cargo-target-$(date +%s)}"
+export CARGO_TARGET_DIR
+
+validate_numeric_config "BUILD_JOBS" "${BUILD_JOBS}"
+validate_numeric_config "DEFAULT_MAX_DELINQUENT_STAKE" "${DEFAULT_MAX_DELINQUENT_STAKE}"
+validate_numeric_config "DEFAULT_MIN_IDLE_TIME" "${DEFAULT_MIN_IDLE_TIME}"
 
 # ##############################################################################
 # #                                                                            #
@@ -147,6 +292,56 @@ check_exit_flag_support() {
     fi
 }
 
+has_validator_binary() {
+    local candidate_dir="$1"
+
+    [ -n "${candidate_dir}" ] && [ -x "${candidate_dir}/${VALIDATOR_BINARY_NAME}" ]
+}
+
+validator_binary_matches_build_commit() {
+    local candidate_dir="$1"
+
+    if ! has_validator_binary "${candidate_dir}"; then
+        return 1
+    fi
+
+    if [ -z "${CI_COMMIT:-}" ]; then
+        return 0
+    fi
+
+    local expected_short_commit
+    expected_short_commit="${CI_COMMIT:0:8}"
+
+    local candidate_version
+    candidate_version=$("${candidate_dir}/${VALIDATOR_BINARY_NAME}" --version 2>/dev/null | head -n1 || true)
+
+    if [[ "${candidate_version}" == *"${expected_short_commit}"* ]] || [[ "${candidate_version}" == *"${CI_COMMIT}"* ]]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}Skipping ${candidate_dir}: ${VALIDATOR_BINARY_NAME} version does not match current build commit.${NC}"
+    echo -e "${YELLOW}Expected source hash: ${expected_short_commit}; found: ${candidate_version:-unknown}${NC}"
+    return 1
+}
+
+run_validator_exit_then_monitor() {
+    local validator_path="$1"
+    local ledger_dir="$2"
+    shift 2
+    local exit_flags=("$@")
+
+    echo -e "${CYAN}Issuing exit command to validator: ${validator_path} --ledger ${ledger_dir} exit ${exit_flags[*]}${NC}"
+    if "${validator_path}" --ledger "${ledger_dir}" exit "${exit_flags[@]}"; then
+        echo -e "${GREEN}Validator exit command completed successfully. Starting monitor...${NC}"
+        echo -e "${CYAN}Starting monitor: ${validator_path} --ledger ${ledger_dir} monitor${NC}"
+        "${validator_path}" --ledger "${ledger_dir}" monitor
+    else
+        local exit_status=$?
+        echo -e "${RED}ERROR: Validator exit command failed with status ${exit_status}; monitor was not started.${NC}"
+        return "${exit_status}"
+    fi
+}
+
 get_validator_version_string() {
     local validator_path="$1"
     
@@ -188,7 +383,11 @@ regenerate_exit_script() {
 # Regenerated by start-upgrade.sh on $(date)
 # Validator: ${version_string}
 
-agave-validator --ledger ${ledger_dir} exit ${exit_flags} --monitor
+if "${validator_path}" --ledger "${ledger_dir}" exit ${exit_flags}; then
+    "${validator_path}" --ledger "${ledger_dir}" monitor
+else
+    exit \$?
+fi
 EOF
     
     chmod +x "${exit_script_path}"
@@ -419,13 +618,12 @@ perform_rollback() {
     sleep 1
     
     # Build exit command with appropriate flags
-    EXIT_FLAGS_ROLLBACK="--max-delinquent-stake ${max_delinquent_stake} --min-idle-time ${min_idle_time}"
+    EXIT_FLAGS_ROLLBACK=(--max-delinquent-stake "${max_delinquent_stake}" --min-idle-time "${min_idle_time}")
     if [ "$ROLLBACK_USE_NO_WAIT_FLAG" = true ]; then
-        EXIT_FLAGS_ROLLBACK="${EXIT_FLAGS_ROLLBACK} --no-wait-for-exit"
+        EXIT_FLAGS_ROLLBACK+=(--no-wait-for-exit)
     fi
     
-    echo -e "${CYAN}Issuing exit command: ${VALIDATOR_EXECUTABLE_PATH_ROLLBACK} --ledger ${LEDGER_DIR} exit ${EXIT_FLAGS_ROLLBACK} --monitor${NC}"
-    "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" --ledger "${LEDGER_DIR}" exit ${EXIT_FLAGS_ROLLBACK} --monitor
+    run_validator_exit_then_monitor "${VALIDATOR_EXECUTABLE_PATH_ROLLBACK}" "${LEDGER_DIR}" "${EXIT_FLAGS_ROLLBACK[@]}"
     echo -e "${GREEN}\nExit command sent. Validator should restart with the rolled-back version.${NC}"
     echo -e "${GREEN}ROLLBACK DONE${NC}"
     
@@ -810,9 +1008,13 @@ CI_COMMIT=$(git rev-parse HEAD)
 echo -e "${CYAN}Using CI_COMMIT=${CI_COMMIT} for the build.${NC}"
 export CARGO_BUILD_JOBS="${BUILD_JOBS}"
 
-# Ensure we're in the correct directory and set clean target
+# Ensure we're in the correct directory and set a clean target unless configured.
 cd "${SOURCE_DIR}"
-export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
+if [ "${ENV_SET_CARGO_TARGET_DIR}" = false ] || [ -z "${CARGO_TARGET_DIR}" ]; then
+    export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
+else
+    export CARGO_TARGET_DIR
+fi
 
 CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 CARGO_INSTALL_ALL_SUCCESS=false
@@ -823,16 +1025,15 @@ if [ -x "${CARGO_INSTALL_ALL_SCRIPT}" ]; then
         
         # Check if agave-validator binary exists (the most critical binary)
         # Check in multiple possible locations
-        if [ -f "./target/release/${VALIDATOR_BINARY_NAME}" ] || \
-           [ -f "./bin/${VALIDATOR_BINARY_NAME}" ] || \
-           [ -f "${CARGO_TARGET_DIR}/release/${VALIDATOR_BINARY_NAME}" ]; then
+        if validator_binary_matches_build_commit "./target/release" || \
+           validator_binary_matches_build_commit "./bin" || \
+           validator_binary_matches_build_commit "${CARGO_TARGET_DIR}/release"; then
             echo -e "${GREEN}Essential validator binary found. Build appears successful despite script error.${NC}"
-            echo -e "${YELLOW}Note: Some auxiliary tools like cargo-build-sbf may not have been built/copied.${NC}"
-            echo -e "${YELLOW}Note: cargo-install-all.sh failed, so ./bin directory may contain stale binaries and will be skipped.${NC}"
+            echo -e "${YELLOW}Note: Some auxiliary tools may not have been built/copied.${NC}"
             CARGO_INSTALL_ALL_SUCCESS=false
         else
-            echo -e "${RED}ERROR: Essential validator binary (${VALIDATOR_BINARY_NAME}) not found after build.${NC}"
-            echo -e "${RED}Checked locations: ./target/release/, ./bin/, ${CARGO_TARGET_DIR}/release/${NC}"
+            echo -e "${RED}ERROR: Current-build validator binary (${VALIDATOR_BINARY_NAME}) not found after build.${NC}"
+            echo -e "${RED}Checked for source hash ${CI_COMMIT:0:8} in: ./target/release/, ./bin/, ${CARGO_TARGET_DIR}/release/${NC}"
             echo -e "${RED}Build failed using ${CARGO_INSTALL_ALL_SCRIPT} for ref ${target_ref}${NC}"
             exit 1
         fi
@@ -887,23 +1088,26 @@ mkdir -p "${COMPILED_VERSION_BIN_DIR}"
 
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
 
-# Determine where the build output is located
-# Priority: ALWAYS use CARGO_TARGET_DIR if set (cargo-install-all.sh doesn't respect it)
-# Otherwise use ./bin if cargo-install-all.sh succeeded, or ./target/release as fallback
+# Determine where the build output is located. Only accept directories with a
+# validator binary that reports the source hash for the commit being built.
 BUILD_OUTPUT_DIR=""
-if [ -n "${CARGO_TARGET_DIR}" ] && [ -d "${CARGO_TARGET_DIR}/release" ]; then
-    BUILD_OUTPUT_DIR="${CARGO_TARGET_DIR}/release"
-    echo -e "${CYAN}Using build output from custom CARGO_TARGET_DIR: ${BUILD_OUTPUT_DIR}${NC}"
-    echo -e "${YELLOW}Note: cargo-install-all.sh doesn't respect CARGO_TARGET_DIR, using actual build location${NC}"
-elif [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ] && [ -d "${SOURCE_DIR}/bin" ]; then
+
+if validator_binary_matches_build_commit "${SOURCE_DIR}/bin"; then
     BUILD_OUTPUT_DIR="${SOURCE_DIR}/bin"
-    echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (cargo-install-all.sh succeeded)${NC}"
-elif [ -d "${SOURCE_DIR}/target/release" ]; then
+    if [ "${CARGO_INSTALL_ALL_SUCCESS}" = true ]; then
+        echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (cargo-install-all.sh succeeded)${NC}"
+    else
+        echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR} (validator binary present despite installer warning)${NC}"
+    fi
+elif validator_binary_matches_build_commit "${CARGO_TARGET_DIR}/release"; then
+    BUILD_OUTPUT_DIR="${CARGO_TARGET_DIR}/release"
+    echo -e "${CYAN}Using build output from CARGO_TARGET_DIR: ${BUILD_OUTPUT_DIR}${NC}"
+elif validator_binary_matches_build_commit "${SOURCE_DIR}/target/release"; then
     BUILD_OUTPUT_DIR="${SOURCE_DIR}/target/release"
     echo -e "${CYAN}Using build output from: ${BUILD_OUTPUT_DIR}${NC}"
 else
     echo -e "${RED}ERROR: Cannot find build output directory!${NC}"
-    echo -e "${RED}Checked: ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/bin, ${SOURCE_DIR}/target/release${NC}"
+    echo -e "${RED}Checked for ${VALIDATOR_BINARY_NAME} with source hash ${CI_COMMIT:0:8}: ${SOURCE_DIR}/bin, ${CARGO_TARGET_DIR}/release, ${SOURCE_DIR}/target/release${NC}"
     exit 1
 fi
 
@@ -1017,14 +1221,13 @@ echo -e "${GREEN}Proceeding with validator exit command...${NC}"
 sleep 1
 
 # Build exit command with user's parameters and appropriate flags
-EXIT_FLAGS="--max-delinquent-stake ${user_max_delinquent_stake} --min-idle-time ${user_min_idle_time}"
+EXIT_FLAGS=(--max-delinquent-stake "${user_max_delinquent_stake}" --min-idle-time "${user_min_idle_time}")
 
 if [ "$USE_NO_WAIT_FLAG" = true ]; then
-    EXIT_FLAGS="${EXIT_FLAGS} --no-wait-for-exit"
+    EXIT_FLAGS+=(--no-wait-for-exit)
 fi
 
-echo -e "${CYAN}Issuing exit command to validator: ${VALIDATOR_EXECUTABLE_PATH_UPGRADE} --ledger ${LEDGER_DIR} exit ${EXIT_FLAGS} --monitor${NC}"
-"${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" --ledger "${LEDGER_DIR}" exit ${EXIT_FLAGS} --monitor
+run_validator_exit_then_monitor "${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" "${LEDGER_DIR}" "${EXIT_FLAGS[@]}"
 
 # Regenerate exit-validator.sh convenience script with correct syntax
 regenerate_exit_script "${VALIDATOR_EXECUTABLE_PATH_UPGRADE}" "${LEDGER_DIR}"

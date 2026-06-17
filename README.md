@@ -56,7 +56,11 @@ This script automates the process of upgrading, rolling back, or cleaning old co
 * All PATH operations, symlinks, and environment setups work identically in both shells
 * Seamlessly switch between shells without reconfiguration
 
-See `ZSH_SUPPORT_ANALYSIS.md` and `ZSH_TESTING_GUIDE.md` for detailed compatibility information and testing procedures.
+See `docs/zsh/ZSH_SUPPORT_ANALYSIS.md` and `docs/zsh/ZSH_TESTING_GUIDE.md` for detailed compatibility information and testing procedures.
+
+## System Tuning
+
+Run `./system_tuner.sh` from the repository root for first-time validator host setup. Additional notes live in `docs/system-tuning/README.md`.
 
 ## Prerequisites
 
@@ -79,9 +83,47 @@ See `ZSH_SUPPORT_ANALYSIS.md` and `ZSH_TESTING_GUIDE.md` for detailed compatibil
     * Write access to the `COMPILED_BASE_DIR`.
     * Permissions to execute the `agave-validator` binary.
 
-## Configuration Variables
+## Environment Configuration
 
-The following variables are defined at the top of the script and can be customized:
+Runtime settings are loaded from a local `.env` file next to `start-upgrade.sh`.
+
+### Migration From Older Checkouts
+
+Before updating an older checkout that still keeps configuration at the top of `start-upgrade.sh`, save a copy of the old configuration block:
+
+```bash
+head -n 100 ~/agave-maint-util/start-upgrade.sh > ~/config.yaml
+```
+
+Then update the checkout and create the new private `.env`:
+
+```bash
+cd ~/agave-maint-util
+git stash
+git fetch origin
+git checkout main
+git pull --ff-only
+cp .env.example .env
+nano .env
+chmod 600 .env
+```
+
+Edit `.env` so paths such as `JITO_SOURCE_DIR`, `VANILLA_SOURCE_DIR`, `XANDEUM_SOURCE_DIR`, `COMPILED_BASE_DIR`, and `LEDGER_DIR` match your validator host. After that, use the upgrade script normally:
+
+```bash
+./start-upgrade.sh <version_tag> [--variant <variant>] [-j <number_of_jobs>]
+```
+
+For a fresh checkout, create `.env` from the checked-in template and keep it private:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+The script does not source `.env` as shell code. It reads only supported keys, treats values as plain text, requires the file to be owned by the current user, and refuses group/world-writable config files.
+
+The following variables can be customized in `.env`:
 
 * `JITO_SOURCE_DIR`: Path to the Jito variant Git repository (default: `$HOME/data/jito-solana`).
 * `JITO_REPO_URL`: Git URL for the Jito variant.
@@ -91,9 +133,14 @@ The following variables are defined at the top of the script and can be customiz
 * `XANDEUM_REPO_URL`: Git URL for the Xandeum-Agave client.
 * `COMPILED_BASE_DIR`: Base directory where compiled versions will be stored (default: `$HOME/data/compiled`).
 * `ACTIVE_RELEASE_SYMLINK`: Path to the symbolic link that points to the `bin` directory of the active version (default: `${COMPILED_BASE_DIR}/active_release`).
-* `LEDGER_DIR`: Path to the validator's ledger directory (default: `$HOME/ledger`).
+* `LEDGER_DIR`: Path to the validator's ledger directory (default: `/mnt/ledger`).
 * `BUILD_JOBS`: Default number of parallel jobs for `cargo build` (default: `2`). Can be overridden via command-line argument during upgrades.
 * `VALIDATOR_BINARY_NAME`: Name of the validator executable (default: `agave-validator`).
+* `DEFAULT_MAX_DELINQUENT_STAKE`: Default restart exit threshold (default: `5`).
+* `DEFAULT_MIN_IDLE_TIME`: Default restart idle time in seconds (default: `5`).
+* `CARGO_TARGET_DIR`: Optional custom cargo target directory. Leave unset for a fresh `/tmp/cargo-target-<timestamp>` path each run.
+
+The real `.env` file is intentionally ignored by git. Do not put private host-specific paths or operational settings in committed files.
 
 ## Usage
 
@@ -114,6 +161,10 @@ Make the script executable: `chmod +x start-upgrade.sh`
         * Tags starting with `x` (e.g., `x2.2.0-munich`) → prompts for Xandeum confirmation
         * Other tags → prompts for vanilla Agave confirmation
 * `-j <number_of_jobs>` (Optional): Specifies the number of parallel jobs for `cargo build` by setting the `CARGO_BUILD_JOBS` environment variable.
+
+### Validator Exit and Monitor
+
+Modern Agave/Solana validators no longer support `--monitor` on the `agave-validator exit` subcommand. After an upgrade or rollback, this script now runs the exit command first and starts `agave-validator monitor` only if the exit command succeeds. The generated `~/exit-validator.sh` convenience script follows the same pattern.
 
 **Examples:**
 ```bash

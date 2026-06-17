@@ -8,7 +8,7 @@ Successfully implemented comprehensive Zsh shell support for the agave-maint-uti
 
 ## Files Modified
 
-### 1. `system_tuning/system_tuner.sh`
+### 1. `system_tuner.sh`
 **Changes:**
 - Added shell detection functions:
   - `detect_user_shell()` - Detects user's default shell from system database
@@ -54,7 +54,7 @@ Successfully implemented comprehensive Zsh shell support for the agave-maint-uti
 **Lines Added:** ~15
 **Content:** User-facing documentation
 
-### 4. `system_tuning/README.md`
+### 4. `docs/system-tuning/README.md`
 **Changes:**
 - Added new "Shell Compatibility" section at the top
 - Updated "Purpose" section to highlight shell-aware configuration
@@ -283,10 +283,10 @@ git branch
 ```bash
 git status
 # Modified:
-#   - system_tuning/system_tuner.sh
+#   - system_tuner.sh
 #   - start-upgrade.sh
 #   - README.md
-#   - system_tuning/README.md
+#   - docs/system-tuning/README.md
 # New:
 #   - ZSH_SUPPORT_ANALYSIS.md
 #   - ZSH_TESTING_GUIDE.md
@@ -306,10 +306,10 @@ Add comprehensive Zsh shell support
 - Pass security review (no sensitive data exposed)
 
 Files modified:
-- system_tuning/system_tuner.sh (shell detection and RC file handling)
+- system_tuner.sh (shell detection and RC file handling)
 - start-upgrade.sh (shell-aware messages)
 - README.md (document shell compatibility)
-- system_tuning/README.md (document shell support)
+- docs/system-tuning/README.md (document shell support)
 
 Files created:
 - ZSH_SUPPORT_ANALYSIS.md (technical analysis)

@@ -107,19 +107,18 @@ Other internal defaults that can be modified by editing the script:
 
 ## Usage
 
-1.  Save the script to a file (e.g., `system-tuner.sh`).
-2.  Make it executable: `chmod +x system-tuner.sh`.
-3.  **Run it as the user who will manage the validator and whose `~/.bashrc` should be configured (e.g., `solval`). This user needs `sudo` privileges.**
+1.  From the repository root, make the script executable: `chmod +x system_tuner.sh`.
+2.  **Run it as the user who will manage the validator and whose `~/.bashrc` should be configured (e.g., `solval`). This user needs `sudo` privileges.**
     ```
-    ./system-tuner.sh
+    ./system_tuner.sh
     ```
     If you are logged in as root and want to set it up for `solval`, you might run:
     ```
-    sudo -u solval ./system-tuner.sh
+    sudo -u solval ./system_tuner.sh
     ```
     (Ensure `solval` has the necessary sudo rights for the `sudo` commands *within* the script).
 
-4.  Follow the interactive prompts to confirm path configurations and each major section of changes.
+3.  Follow the interactive prompts to confirm path configurations and each major section of changes.
 
 ## Important Notes
 

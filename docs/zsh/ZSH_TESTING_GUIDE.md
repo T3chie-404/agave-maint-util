@@ -52,7 +52,7 @@ sudo chsh -s /bin/bash $(whoami)
 ```
 
 **Test Steps:**
-1. Run `./system_tuning/system_tuner.sh`
+1. Run `./system_tuner.sh`
 2. Observe shell detection output
 
 **Expected Results:**
@@ -79,7 +79,7 @@ sudo chsh -s /bin/zsh $(whoami)
 ```
 
 **Test Steps:**
-1. Run `./system_tuning/system_tuner.sh`
+1. Run `./system_tuner.sh`
 2. Observe shell detection output
 
 **Expected Results:**
@@ -364,7 +364,7 @@ echo ""
 # Test 1: Shell detection function
 echo "Test 1: Shell Detection"
 cd /home/ubuntu/agave-maint-util
-source <(grep -A 20 "^detect_user_shell()" ./system_tuning/system_tuner.sh)
+source <(grep -A 20 "^detect_user_shell()" ./system_tuner.sh)
 DETECTED=$(detect_user_shell)
 echo "Detected shell: $DETECTED"
 if [ -n "$DETECTED" ]; then
@@ -481,7 +481,7 @@ Use this checklist when performing manual testing:
 Compare execution time between bash and zsh detection:
 
 ```bash
-time ./system_tuning/system_tuner.sh # (exit immediately after shell detection)
+time ./system_tuner.sh # (exit immediately after shell detection)
 ```
 
 Should be nearly identical (<0.1s difference).

@@ -198,13 +198,13 @@ configure_active_release_path() {
         if ! grep -qFx -- "${new_path_line_literal}" "${rc_file}"; then
              log_msg "Adding new PATH line for '${expanded_active_release_path_to_add}' to ${rc_file}..."
              echo '' >> "${rc_file}" 
-             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${rc_file}"
+             echo "# Add Solana active_release to PATH (managed by system_tuner.sh on $(date))" >> "${rc_file}"
              echo "${new_path_line_literal}" >> "${rc_file}"
              log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${rc_file}.${NC}"
         elif grep -qFx -- "#${new_path_line_literal}" "${rc_file}"; then
              log_msg "Found a commented-out version of the target PATH line. Will add a new active one."
              echo '' >> "${rc_file}" 
-             echo "# Add Solana active_release to PATH (managed by system_tuning_setup.sh on $(date))" >> "${rc_file}"
+             echo "# Add Solana active_release to PATH (managed by system_tuner.sh on $(date))" >> "${rc_file}"
              echo "${new_path_line_literal}" >> "${rc_file}"
              log_msg "${GREEN}Added '${expanded_active_release_path_to_add}' to PATH in ${rc_file}.${NC}"
         fi
@@ -250,7 +250,7 @@ install_rust_and_components() {
                 log_msg "Adding 'source \"\$HOME/.cargo/env\"' to ${rc_file} for persistence..."
                 if ! grep -qF 'source "$HOME/.cargo/env"' "${rc_file}"; then 
                     echo '' >> "${rc_file}" 
-                    echo "# Rust/Cargo PATH setup (managed by system_tuning_setup.sh for ${shell_display_name})" >> "${rc_file}"
+                    echo "# Rust/Cargo PATH setup (managed by system_tuner.sh for ${shell_display_name})" >> "${rc_file}"
                     echo 'source "$HOME/.cargo/env"' >> "${rc_file}"
                     log_msg "Added Rust source line to ${rc_file}."
                 else
@@ -518,13 +518,13 @@ create_convenience_scripts() {
     echo "   tail -f ${log_file_path}"
     echo ""
     echo -e "${GREEN}2. mon.sh${NC} - Monitor validator with agave-validator monitor"
-    echo "   agave-validator --ledger ${ledger_path_expanded} monitor"
+    echo "   agave-validator --ledger \"${ledger_path_expanded}\" monitor"
     echo ""
     echo -e "${GREEN}3. catchup.sh${NC} - Check validator catchup status"
     echo "   solana catchup --our-localhost"
     echo ""
     echo -e "${GREEN}4. exit-validator.sh${NC} - Gracefully exit validator (takes snapshot)"
-    echo "   agave-validator --ledger ${ledger_path_expanded} exit --max-delinquent-stake 10 --min-idle-time 0 --monitor"
+    echo "   agave-validator --ledger \"${ledger_path_expanded}\" exit --max-delinquent-stake 10 --min-idle-time 0 --no-wait-for-exit && agave-validator --ledger \"${ledger_path_expanded}\" monitor"
     echo ""
     echo -e "${CYAN_BOLD}=====================================${NC}"
     echo ""
@@ -551,7 +551,7 @@ EOF
 # Monitor validator using agave-validator monitor
 # Created by system_tuner.sh on $(date)
 
-agave-validator --ledger ${ledger_path_expanded} monitor
+agave-validator --ledger "${ledger_path_expanded}" monitor
 EOF
     chmod +x "$HOME/mon.sh"
     log_msg "${GREEN}Created: $HOME/mon.sh${NC}"
@@ -574,7 +574,11 @@ EOF
 # Service will auto-restart if configured
 # Created by system_tuner.sh on $(date)
 
-agave-validator --ledger ${ledger_path_expanded} exit --max-delinquent-stake 10 --min-idle-time 0 --no-wait-for-exit --monitor
+if agave-validator --ledger "${ledger_path_expanded}" exit --max-delinquent-stake 10 --min-idle-time 0 --no-wait-for-exit; then
+    agave-validator --ledger "${ledger_path_expanded}" monitor
+else
+    exit \$?
+fi
 EOF
     chmod +x "$HOME/exit-validator.sh"
     log_msg "${GREEN}Created: $HOME/exit-validator.sh${NC}"

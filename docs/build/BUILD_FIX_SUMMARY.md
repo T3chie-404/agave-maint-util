@@ -100,23 +100,18 @@ This fix addresses similar issues that may occur with:
 
 ## Additional Fixes
 
-### CARGO_TARGET_DIR Build Output Detection (lines 833-856)
+### Build Output Detection
 
-When `CARGO_TARGET_DIR` is set to a custom directory (e.g., `/tmp/cargo-target-*`), the binaries are built there instead of `./target/release/`. 
+The build script must choose a directory that actually contains the validator binary for the commit being built, not merely a directory that exists. Some client variants create a `${CARGO_TARGET_DIR}/release` directory while `cargo-install-all.sh` still populates `./bin`; other versions may build directly under the target directory.
 
-**CRITICAL DISCOVERY:** Jito's `cargo-install-all.sh` script **does NOT respect CARGO_TARGET_DIR**. It's hardcoded to look for binaries in `./target/release/` and copy them to `./bin/`. When CARGO_TARGET_DIR is set:
-- The actual build happens in `/tmp/cargo-target-*/release/` with the CORRECT version ✅
-- But `cargo-install-all.sh` copies from `./target/release/` (which may have old binaries) to `./bin/` ❌
-- This results in the wrong version being deployed even though the build succeeded!
+**Current rule:** accept only directories containing `${VALIDATOR_BINARY_NAME}` when that binary's `--version` output includes the current `CI_COMMIT` source hash.
 
-**Solution:** ALWAYS prioritize CARGO_TARGET_DIR when it's set, regardless of whether cargo-install-all.sh succeeded:
+**Priority Order:**
+1. `${SOURCE_DIR}/bin` - Freshly removed before each build, then populated by `cargo-install-all.sh`
+2. `${CARGO_TARGET_DIR}/release` - Used when it contains the validator binary
+3. `${SOURCE_DIR}/target/release` - Standard fallback when it contains the validator binary
 
-**New Priority Order:**
-1. `${CARGO_TARGET_DIR}/release` - If CARGO_TARGET_DIR is set (ALWAYS use this first) ✅
-2. `${SOURCE_DIR}/bin` - If cargo-install-all.sh succeeded AND no CARGO_TARGET_DIR
-3. `${SOURCE_DIR}/target/release` - Standard location fallback
-
-This ensures the actual compiled binaries are used, not whatever cargo-install-all.sh copied from the wrong location.
+This avoids deploying an empty or partial target directory and prevents stale binaries such as `agave-validator 2.1.6 (src:00000000...)` from being accepted for a newer requested ref.
 
 ### Cargo Clean and ./bin Directory Removal (lines 734-748)
 
@@ -144,7 +139,5 @@ This prevents the critical issue where version 3.0.6 binaries remained in `./bin
 ✅ **Fixed and ready for testing**
 
 The build should now complete successfully for v3.0.6-jito.1 and other versions where auxiliary tools may be missing.
-
-
 
 
