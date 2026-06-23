@@ -113,6 +113,18 @@ The build script must choose a directory that actually contains the validator bi
 
 This avoids deploying an empty or partial target directory and prevents stale binaries such as `agave-validator 2.1.6 (src:00000000...)` from being accepted for a newer requested ref.
 
+### Runtime Artifact Validation
+
+Some Agave/Jito releases can produce a valid `agave-validator` binary even when `cargo-install-all.sh` exits before copying runtime libraries. For example, a failed copy of an auxiliary binary can prevent `fetch-perf-libs.sh` from running, leaving the compiled release without `perf-libs/libpoh-simd.so`.
+
+Before `active_release` can be updated, the script now validates the compiled release:
+
+1. `${COMPILED_VERSION_BIN_DIR}/${VALIDATOR_BINARY_NAME}` exists and reports the expected source hash
+2. On Linux x86_64, `${COMPILED_VERSION_BIN_DIR}/perf-libs/libpoh-simd.so` exists
+3. If perf libs are missing, the script tries to copy them from build outputs or runs `${SOURCE_DIR}/fetch-perf-libs.sh`
+
+If `libpoh-simd.so` is still missing after that, the upgrade fails before the symlink prompt.
+
 ### Cargo Clean and ./bin Directory Removal (lines 734-748)
 
 Added two critical cleaning steps before each build:
@@ -139,5 +151,4 @@ This prevents the critical issue where version 3.0.6 binaries remained in `./bin
 ✅ **Fixed and ready for testing**
 
 The build should now complete successfully for v3.0.6-jito.1 and other versions where auxiliary tools may be missing.
-
 

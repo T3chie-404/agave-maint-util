@@ -218,9 +218,21 @@ This command will:
 3.  Show estimated space to be freed and ask for final confirmation.
 4.  Permanently delete selected version directories.
 
+### 5. Validate a Compiled Artifact
+
+```
+./start-upgrade.sh validate-artifact <compiled_version> [expected_source_hash]
+```
+
+This checks an existing compiled release under `${COMPILED_BASE_DIR}/<compiled_version>/bin` without changing `active_release` or restarting the validator. On Linux x86_64, validation requires:
+
+* An executable `agave-validator`
+* A matching source hash when `expected_source_hash` is provided
+* `perf-libs/libpoh-simd.so`
+
 ## Script Workflow (Simplified)
 
-* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, runs `cargo clean` to remove cached artifacts, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, updates symlink, verifies, prompts for restart.
+* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, runs `cargo clean` to remove cached artifacts, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, validates runtime artifacts, updates symlink, verifies, prompts for restart.
 * **Rollback:** Lists versions, prompts for selection, updates symlink, verifies, prompts for restart.
 * **Clean:** Lists deletable versions, prompts for numbered selection, confirms, deletes.
 
@@ -231,6 +243,6 @@ This command will:
 * **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
 * **Error Handling:** Uses `set -euo pipefail`.
 * **Fresh Builds:** The script runs `cargo clean` and removes the `./bin` directory before each build to ensure a completely clean compilation. This prevents issues where cached artifacts or stale binaries from previous versions could be reused, ensuring each build truly reflects the checked-out version.
-* **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. If the script returns an error but essential binaries (like `agave-validator`) were successfully built, the upgrade will continue with a warning. This handles cases where auxiliary tools like `cargo-build-sbf` may not be built in certain versions. A fallback to `cargo build --release` is provided with a warning if the script is not found.
+* **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. If the script returns an error but essential binaries (like `agave-validator`) were successfully built, the upgrade only continues when release artifact validation passes. This handles cases where auxiliary tools may not be built in certain versions while still refusing incomplete runtime packages missing `perf-libs/libpoh-simd.so`. A fallback to `cargo build --release` is provided with a warning if the script is not found.
 * **Irreversible Deletion:** The `clean` command uses `rm -rf`. Double-check selections before confirming deletion as this action is permanent.
 EOF

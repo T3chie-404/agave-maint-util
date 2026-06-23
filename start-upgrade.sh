@@ -324,6 +324,131 @@ validator_binary_matches_build_commit() {
     return 1
 }
 
+validator_binary_matches_expected_hash() {
+    local validator_path="$1"
+    local expected_hash="${2:-}"
+
+    if [ ! -x "${validator_path}" ]; then
+        echo -e "${RED}ERROR: ${VALIDATOR_BINARY_NAME} not found or not executable at ${validator_path}${NC}"
+        return 1
+    fi
+
+    if [ -z "${expected_hash}" ]; then
+        return 0
+    fi
+
+    local expected_short_hash
+    expected_short_hash="${expected_hash:0:8}"
+
+    local version_output
+    version_output=$("${validator_path}" --version 2>/dev/null | head -n1 || true)
+
+    if [[ "${version_output}" == *"${expected_short_hash}"* ]] || [[ "${version_output}" == *"${expected_hash}"* ]]; then
+        return 0
+    fi
+
+    echo -e "${RED}ERROR: ${validator_path} does not match expected source hash ${expected_short_hash}.${NC}"
+    echo -e "${RED}Version output: ${version_output:-unknown}${NC}"
+    return 1
+}
+
+requires_perf_libs() {
+    [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]
+}
+
+copy_perf_libs_from() {
+    local source_perf_libs="$1"
+    local dest_perf_libs="$2"
+
+    if [ ! -d "${source_perf_libs}" ]; then
+        return 1
+    fi
+
+    echo -e "${CYAN}Copying perf-libs from ${source_perf_libs} to ${dest_perf_libs}${NC}"
+    rm -rf "${dest_perf_libs}"
+    mkdir -p "$(dirname "${dest_perf_libs}")"
+    cp -a "${source_perf_libs}" "${dest_perf_libs}"
+}
+
+ensure_perf_libs() {
+    local compiled_bin_dir="$1"
+    local build_output_dir="${2:-}"
+
+    if ! requires_perf_libs; then
+        return 0
+    fi
+
+    local dest_perf_libs="${compiled_bin_dir}/perf-libs"
+    local required_lib="${dest_perf_libs}/libpoh-simd.so"
+
+    if [ -f "${required_lib}" ]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}perf-libs missing from compiled release; fetching/copying runtime libraries...${NC}"
+
+    local candidate_perf_libs=()
+    if [ -n "${build_output_dir}" ]; then
+        candidate_perf_libs+=("${build_output_dir}/perf-libs")
+    fi
+    candidate_perf_libs+=("${CARGO_TARGET_DIR}/perf-libs" "${SOURCE_DIR}/target/perf-libs")
+
+    local candidate
+    for candidate in "${candidate_perf_libs[@]}"; do
+        if copy_perf_libs_from "${candidate}" "${dest_perf_libs}"; then
+            break
+        fi
+    done
+
+    if [ ! -f "${required_lib}" ]; then
+        if [ -x "${SOURCE_DIR}/fetch-perf-libs.sh" ]; then
+            echo -e "${CYAN}Running ${SOURCE_DIR}/fetch-perf-libs.sh${NC}"
+            (
+                cd "${SOURCE_DIR}"
+                ./fetch-perf-libs.sh
+            )
+        else
+            echo -e "${YELLOW}WARNING: ${SOURCE_DIR}/fetch-perf-libs.sh not found or not executable.${NC}"
+        fi
+
+        copy_perf_libs_from "${SOURCE_DIR}/target/perf-libs" "${dest_perf_libs}" || true
+    fi
+
+    if [ ! -f "${required_lib}" ]; then
+        echo -e "${RED}ERROR: Missing ${required_lib}; refusing to update active_release.${NC}"
+        exit 1
+    fi
+}
+
+warn_if_raw_cargo_target_artifacts() {
+    local compiled_bin_dir="$1"
+
+    if [ -d "${compiled_bin_dir}/.fingerprint" ] || [ -d "${compiled_bin_dir}/build" ] || [ -d "${compiled_bin_dir}/deps" ] || [ -d "${compiled_bin_dir}/incremental" ]; then
+        echo -e "${YELLOW}WARNING: ${compiled_bin_dir} contains raw Cargo target directories. This usually means fallback packaging was used after cargo-install-all.sh failed.${NC}"
+    fi
+}
+
+validate_release_artifact() {
+    local compiled_bin_dir="$1"
+    local expected_hash="${2:-}"
+    local validator_path="${compiled_bin_dir}/${VALIDATOR_BINARY_NAME}"
+
+    echo -e "${CYAN}Validating release artifact in ${compiled_bin_dir}${NC}"
+
+    validator_binary_matches_expected_hash "${validator_path}" "${expected_hash}"
+
+    if requires_perf_libs; then
+        local required_lib="${compiled_bin_dir}/perf-libs/libpoh-simd.so"
+        if [ ! -f "${required_lib}" ]; then
+            echo -e "${RED}ERROR: Missing required runtime library: ${required_lib}${NC}"
+            return 1
+        fi
+    fi
+
+    warn_if_raw_cargo_target_artifacts "${compiled_bin_dir}"
+    echo -e "${GREEN}Release artifact validation passed.${NC}"
+}
+
 run_validator_exit_then_monitor() {
     local validator_path="$1"
     local ledger_dir="$2"
@@ -758,6 +883,23 @@ perform_clean() {
     exit 0
 }
 
+# --- Validate Compiled Artifact Function ---
+perform_validate_artifact() {
+    local version_to_validate="$1"
+    local expected_hash="${2:-}"
+    local compiled_bin_dir="${COMPILED_BASE_DIR}/${version_to_validate}/bin"
+
+    echo -e "${CYAN}--- Validating Compiled Artifact: ${version_to_validate} ---${NC}"
+
+    if [ ! -d "${compiled_bin_dir}" ]; then
+        echo -e "${RED}ERROR: Compiled binary directory does not exist: ${compiled_bin_dir}${NC}"
+        exit 1
+    fi
+
+    validate_release_artifact "${compiled_bin_dir}" "${expected_hash}"
+    exit 0
+}
+
 # --- Main Script Logic ---
 
 # Assumes dependencies (git, cargo, rsync, jq, etc.) are pre-installed.
@@ -768,6 +910,7 @@ if [ -z "${1:-}" ]; then
     echo -e "${CYAN}                   (variant: agave, jito, xandeum)${NC}"
     echo -e "${CYAN}Usage for Rollback: ${YELLOW}$(basename "$0") rollback${NC}"
     echo -e "${CYAN}Usage for Cleanup:  ${YELLOW}$(basename "$0") clean\n${NC}"
+    echo -e "${CYAN}Usage for Validate: ${YELLOW}$(basename "$0") validate-artifact <compiled_version> [expected_source_hash]\n${NC}"
     exit 1
 fi
 
@@ -793,6 +936,13 @@ if [ "${MODE_OR_REF_ARG}" == "rollback" ]; then
     perform_rollback 
 elif [ "${MODE_OR_REF_ARG}" == "clean" ]; then
     perform_clean 
+elif [ "${MODE_OR_REF_ARG}" == "validate-artifact" ]; then
+    if [ -z "${2:-}" ]; then
+        echo -e "${RED}ERROR: validate-artifact requires a compiled version directory name.${NC}"
+        echo -e "${CYAN}Usage: ${YELLOW}$(basename "$0") validate-artifact <compiled_version> [expected_source_hash]${NC}"
+        exit 1
+    fi
+    perform_validate_artifact "$2" "${3:-}"
 fi
 
 # If not rollback, clean, or a show option, assume upgrade. 
@@ -1116,6 +1266,8 @@ if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
     exit 1
 fi
 rsync -aHA "${BUILD_OUTPUT_DIR}/" "${COMPILED_VERSION_BIN_DIR}/"
+ensure_perf_libs "${COMPILED_VERSION_BIN_DIR}" "${BUILD_OUTPUT_DIR}"
+validate_release_artifact "${COMPILED_VERSION_BIN_DIR}" "${CI_COMMIT}"
 
 read -p "Build complete. Check artifacts in ${COMPILED_VERSION_BIN_DIR}. Press Enter to update active_release symlink..." key
 echo -e "${GREEN}Proceeding with symlink update...${NC}"
