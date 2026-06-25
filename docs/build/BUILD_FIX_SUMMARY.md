@@ -125,20 +125,21 @@ Before `active_release` can be updated, the script now validates the compiled re
 
 If `libpoh-simd.so` is still missing after that, the upgrade fails before the symlink prompt.
 
-### Cargo Clean and ./bin Directory Removal (lines 734-748)
+### Cargo Clean and Source Output Removal
 
-Added two critical cleaning steps before each build:
+Added critical cleaning steps before each build:
 
-1. **`cargo clean`** - Removes cached build artifacts from the Cargo cache
-2. **`rm -rf ./bin`** - Removes the `./bin` directory where `cargo-install-all.sh` copies final binaries
+1. **`rm -rf ./bin`** - Removes the directory where `cargo-install-all.sh` copies final binaries
+2. **`rm -rf ./target`** - Removes repo-local target artifacts that some install scripts copy from even when `CARGO_TARGET_DIR` is set
+3. **safe cleanup of `/tmp` CARGO_TARGET_DIR** - Removes stale external target output when the target dir is under `/tmp`
+4. **`cargo clean`** - Removes cached build artifacts from the active Cargo target
 
-**Why both are needed:**
-- `cargo clean` only cleans build caches, not the final `./bin` output directory
-- The `./bin` directory may contain stale binaries from previous builds
-- Even when `cargo-install-all.sh` succeeds, it may not overwrite all existing binaries in `./bin`
-- Removing `./bin` ensures `cargo-install-all.sh` creates fresh binaries, not a mix of old and new
+**Why these are needed:**
+- `cargo-install-all.sh` may build with `CARGO_TARGET_DIR` but still copy from repo-local `target/release`
+- stale repo-local `target/release/agave-validator` can be copied into `./bin`
+- removing both `./bin` and `./target` ensures copied binaries come from the current checkout, not an older build
 
-This prevents the critical issue where version 3.0.6 binaries remained in `./bin` even after successfully building version 3.0.8.
+This prevents issues where older binaries remain in repo-local output paths even after successfully building a newer ref.
 
 ## Files Modified
 
@@ -151,4 +152,3 @@ This prevents the critical issue where version 3.0.6 binaries remained in `./bin
 ✅ **Fixed and ready for testing**
 
 The build should now complete successfully for v3.0.6-jito.1 and other versions where auxiliary tools may be missing.
-

@@ -324,6 +324,17 @@ validator_binary_matches_build_commit() {
     return 1
 }
 
+validator_version_from_dir() {
+    local candidate_dir="$1"
+
+    if ! has_validator_binary "${candidate_dir}"; then
+        echo "missing"
+        return
+    fi
+
+    "${candidate_dir}/${VALIDATOR_BINARY_NAME}" --version 2>/dev/null | head -n1 || echo "unknown"
+}
+
 validator_binary_matches_expected_hash() {
     local validator_path="$1"
     local expected_hash="${2:-}"
@@ -350,6 +361,39 @@ validator_binary_matches_expected_hash() {
     echo -e "${RED}ERROR: ${validator_path} does not match expected source hash ${expected_short_hash}.${NC}"
     echo -e "${RED}Version output: ${version_output:-unknown}${NC}"
     return 1
+}
+
+remove_dir_if_safe() {
+    local dir_to_remove="$1"
+    local description="$2"
+
+    if [ -z "${dir_to_remove}" ] || [ "${dir_to_remove}" = "/" ]; then
+        echo -e "${RED}ERROR: Refusing to remove unsafe ${description} path: '${dir_to_remove}'${NC}"
+        exit 1
+    fi
+
+    if [ -d "${dir_to_remove}" ]; then
+        echo -e "${CYAN}Removing stale ${description}: ${dir_to_remove}${NC}"
+        rm -rf "${dir_to_remove}"
+    fi
+}
+
+clean_source_build_outputs() {
+    echo -e "${CYAN}Cleaning source output directories to prevent stale binaries...${NC}"
+    remove_dir_if_safe "${SOURCE_DIR}/bin" "source bin directory"
+    remove_dir_if_safe "${SOURCE_DIR}/target" "source target directory"
+
+    if [ -n "${CARGO_TARGET_DIR:-}" ] && [ "${CARGO_TARGET_DIR}" != "${SOURCE_DIR}/target" ]; then
+        case "${CARGO_TARGET_DIR}" in
+            /tmp/*)
+                remove_dir_if_safe "${CARGO_TARGET_DIR}" "CARGO_TARGET_DIR"
+                ;;
+            *)
+                echo -e "${YELLOW}WARNING: Not removing configured CARGO_TARGET_DIR outside /tmp: ${CARGO_TARGET_DIR}${NC}"
+                echo -e "${YELLOW}Ensure it does not contain stale artifacts before building.${NC}"
+                ;;
+        esac
+    fi
 }
 
 requires_perf_libs() {
@@ -1136,6 +1180,20 @@ fi
 echo -e "${GREEN}Ready to build...${NC}"
 sleep 5
 
+# Ensure we're in the correct directory and set a clean target unless configured.
+cd "${SOURCE_DIR}"
+if [ "${ENV_SET_CARGO_TARGET_DIR}" = false ] || [ -z "${CARGO_TARGET_DIR}" ]; then
+    export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
+else
+    export CARGO_TARGET_DIR
+fi
+
+echo -e "${CYAN}Build source directory: ${SOURCE_DIR}${NC}"
+echo -e "${CYAN}Target ref: ${target_ref}${NC}"
+echo -e "${CYAN}CARGO_TARGET_DIR: ${CARGO_TARGET_DIR}${NC}"
+
+clean_source_build_outputs
+
 # Clean any previous build artifacts to ensure fresh build
 echo -e "${CYAN}Cleaning previous build artifacts...${NC}"
 if command -v cargo &> /dev/null; then
@@ -1145,26 +1203,12 @@ else
     echo -e "${YELLOW}WARNING: cargo command not found, skipping clean step.${NC}"
 fi
 
-# Also remove ./bin directory to prevent stale binaries
-if [ -d "./bin" ]; then
-    echo -e "${CYAN}Removing stale ./bin directory...${NC}"
-    rm -rf "./bin"
-    echo -e "${GREEN}Removed ./bin directory.${NC}"
-fi
-
 echo -e "${GREEN}Building ref ${target_ref} (CARGO_BUILD_JOBS=${BUILD_JOBS})...${NC}"
 export CI_COMMIT
 CI_COMMIT=$(git rev-parse HEAD)
 echo -e "${CYAN}Using CI_COMMIT=${CI_COMMIT} for the build.${NC}"
+echo -e "${CYAN}Using short source hash: ${CI_COMMIT:0:8}${NC}"
 export CARGO_BUILD_JOBS="${BUILD_JOBS}"
-
-# Ensure we're in the correct directory and set a clean target unless configured.
-cd "${SOURCE_DIR}"
-if [ "${ENV_SET_CARGO_TARGET_DIR}" = false ] || [ -z "${CARGO_TARGET_DIR}" ]; then
-    export CARGO_TARGET_DIR="/tmp/cargo-target-$(date +%s)"
-else
-    export CARGO_TARGET_DIR
-fi
 
 CARGO_INSTALL_ALL_SCRIPT="./scripts/cargo-install-all.sh"
 CARGO_INSTALL_ALL_SUCCESS=false
@@ -1233,7 +1277,19 @@ elif ! [ -w "${COMPILED_BASE_DIR}" ] || ! [ "$(stat -c '%U' "${COMPILED_BASE_DIR
     fi
 fi
 
-echo -e "${CYAN}Creating directory for compiled version: ${COMPILED_VERSION_BIN_DIR}${NC}"
+if [[ "${COMPILED_VERSION_BIN_DIR}" != "${COMPILED_BASE_DIR}/"* ]] || [ "${COMPILED_VERSION_BIN_DIR}" = "${COMPILED_BASE_DIR}" ]; then
+    echo -e "${RED}ERROR: Refusing to clean unsafe compiled output path: ${COMPILED_VERSION_BIN_DIR}${NC}"
+    exit 1
+fi
+
+if [ -L "${ACTIVE_RELEASE_SYMLINK}" ] && [ "$(readlink -f "${ACTIVE_RELEASE_SYMLINK}")" = "$(readlink -f "${COMPILED_VERSION_BIN_DIR}" 2>/dev/null || printf '%s' "${COMPILED_VERSION_BIN_DIR}")" ]; then
+    echo -e "${RED}ERROR: Refusing to clean ${COMPILED_VERSION_BIN_DIR} because it is the current active_release target.${NC}"
+    echo -e "${YELLOW}Build a different ref name or move active_release before rebuilding the active version.${NC}"
+    exit 1
+fi
+
+echo -e "${CYAN}Creating clean directory for compiled version: ${COMPILED_VERSION_BIN_DIR}${NC}"
+rm -rf "${COMPILED_VERSION_BIN_DIR}"
 mkdir -p "${COMPILED_VERSION_BIN_DIR}" 
 
 echo -e "${CYAN}Syncing compiled binaries...${NC}"
@@ -1265,7 +1321,11 @@ if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
     echo -e "${RED}ERROR: Expected build output directory ${BUILD_OUTPUT_DIR} not found after build!${NC}"
     exit 1
 fi
-rsync -aHA "${BUILD_OUTPUT_DIR}/" "${COMPILED_VERSION_BIN_DIR}/"
+
+echo -e "${CYAN}Selected BUILD_OUTPUT_DIR: ${BUILD_OUTPUT_DIR}${NC}"
+echo -e "${CYAN}Validator from BUILD_OUTPUT_DIR: $(validator_version_from_dir "${BUILD_OUTPUT_DIR}")${NC}"
+rsync -aHA --delete "${BUILD_OUTPUT_DIR}/" "${COMPILED_VERSION_BIN_DIR}/"
+echo -e "${CYAN}Validator from compiled release: $(validator_version_from_dir "${COMPILED_VERSION_BIN_DIR}")${NC}"
 ensure_perf_libs "${COMPILED_VERSION_BIN_DIR}" "${BUILD_OUTPUT_DIR}"
 validate_release_artifact "${COMPILED_VERSION_BIN_DIR}" "${CI_COMMIT}"
 

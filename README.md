@@ -232,7 +232,7 @@ This checks an existing compiled release under `${COMPILED_BASE_DIR}/<compiled_v
 
 ## Script Workflow (Simplified)
 
-* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, runs `cargo clean` to remove cached artifacts, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries, validates runtime artifacts, updates symlink, verifies, prompts for restart.
+* **Upgrade:** Parses args, selects source repo (with prompts if ambiguous), clones if needed (using `sudo mkdir/chown` for the source directory if it doesn't exist, then `git clone` as user), fetches, checks out tag, updates submodules, removes stale source `bin`/`target` output, runs `cargo clean`, builds (preferring `./scripts/cargo-install-all.sh .` with `CI_COMMIT` and `CARGO_BUILD_JOBS` set), copies binaries into a clean compiled destination, validates runtime artifacts, updates symlink, verifies, prompts for restart.
 * **Rollback:** Lists versions, prompts for selection, updates symlink, verifies, prompts for restart.
 * **Clean:** Lists deletable versions, prompts for numbered selection, confirms, deletes.
 
@@ -242,7 +242,7 @@ This checks an existing compiled release under `${COMPILED_BASE_DIR}/<compiled_v
 * **PATH Variable:** For convenient command-line use of `agave-validator` and for the secondary verification test to pass naturally, ensure `${ACTIVE_RELEASE_SYMLINK}` (e.g., `$HOME/data/compiled/active_release`) is added to the system `PATH` (e.g., via `~/.bashrc` or `~/.zshrc`, typically handled by the system tuning script which automatically detects your shell).
 * **Backup:** The script backs up the `active_release` symlink. The `clean` command permanently deletes version directories.
 * **Error Handling:** Uses `set -euo pipefail`.
-* **Fresh Builds:** The script runs `cargo clean` and removes the `./bin` directory before each build to ensure a completely clean compilation. This prevents issues where cached artifacts or stale binaries from previous versions could be reused, ensuring each build truly reflects the checked-out version.
+* **Fresh Builds:** The script removes the source `./bin` and `./target` directories, runs `cargo clean`, and packages into a clean compiled destination before each build. This prevents issues where cached artifacts or stale binaries from previous versions could be reused, ensuring each build truly reflects the checked-out version.
 * **`./scripts/cargo-install-all.sh`:** This script is preferred for building to ensure all components and version information are correctly compiled. If the script returns an error but essential binaries (like `agave-validator`) were successfully built, the upgrade only continues when release artifact validation passes. This handles cases where auxiliary tools may not be built in certain versions while still refusing incomplete runtime packages missing `perf-libs/libpoh-simd.so`. A fallback to `cargo build --release` is provided with a warning if the script is not found.
 * **Irreversible Deletion:** The `clean` command uses `rm -rf`. Double-check selections before confirming deletion as this action is permanent.
 EOF
